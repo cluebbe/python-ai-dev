@@ -10,7 +10,7 @@ Speech-to-text (STT) is the process of converting spoken audio into written
 text. It powers voice assistants, transcription tools, accessibility features,
 and hands-free interfaces.
 
-This exam uses **Google's Web Speech API**, accessed through the
+This workshop uses **Google's Web Speech API**, accessed through the
 [`SpeechRecognition`](https://pypi.org/project/SpeechRecognition/) library.
 The Web Speech API is Google's free, cloud-based recognition service — no
 account or API key is required for low-volume use. Audio is recorded locally,
