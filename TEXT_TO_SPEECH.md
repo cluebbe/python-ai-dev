@@ -31,21 +31,23 @@ source venv/bin/activate
 venv\Scripts\activate
 ```
 
-**2. Install Python dependencies**
+**2. Install system dependencies (if needed)**
 
-```bash
-pip install pyttsx3
-```
-
-**Platform notes:**
-
-| Platform | Extra steps if needed |
+| Platform | Command |
 |---|---|
 | macOS | None — uses built-in NSSpeechSynthesizer |
 | Windows | None — uses built-in SAPI5 |
 | Linux | `sudo apt-get install espeak` |
 
-**3. Verify the installation**
+**3. Install Python dependencies**
+
+All packages are pinned in `requirements.txt` to avoid version conflicts:
+
+```bash
+pip install -r requirements.txt
+```
+
+**4. Verify the installation**
 
 ```python
 import pyttsx3

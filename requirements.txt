@@ -1,0 +1,42 @@
+# Core dependencies for speech_to_text.py, text_to_speech.py, and chatbot.py
+#
+# INSTALL
+# -------
+# macOS (if pyaudio fails):
+#   brew install portaudio
+#
+# Linux:
+#   sudo apt-get install python3-pyaudio portaudio19-dev espeak
+#
+# Then install all Python packages:
+#   pip install -r requirements.txt
+#
+# NOTE: torch 2.2.2 is the latest version available for Python 3.12 via PyPI.
+# If pip cannot find it, install from the PyTorch index instead:
+#   pip install torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+
+# Speech recognition
+SpeechRecognition==3.16.1
+PyAudio==0.2.14
+
+# Text to speech
+pyttsx3==2.99
+
+# Language model
+torch==2.2.2
+transformers==4.38.0
+tokenizers==0.15.2
+safetensors==0.7.0
+
+# NumPy pinned below 2.0 — torch 2.2.2 was compiled against NumPy 1.x
+numpy==1.26.4
+
+# Transformers runtime dependencies
+huggingface_hub==0.36.2
+requests==2.33.1
+regex==2026.5.9
+tqdm==4.67.3
+PyYAML==6.0.3
+filelock==3.29.0
+packaging==26.2

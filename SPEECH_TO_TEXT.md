@@ -35,21 +35,23 @@ source venv/bin/activate
 venv\Scripts\activate
 ```
 
-**2. Install Python dependencies**
+**2. Install system dependencies (if needed)**
 
-```bash
-pip install SpeechRecognition pyaudio
-```
-
-**Platform notes for PyAudio:**
-
-| Platform | If `pip install pyaudio` fails |
+| Platform | Command |
 |---|---|
-| macOS | `brew install portaudio` then retry `pip install pyaudio` |
+| macOS | `brew install portaudio` |
 | Linux | `sudo apt-get install python3-pyaudio portaudio19-dev` |
 | Windows | `pip install pipwin && pipwin install pyaudio` |
 
-**3. Verify the installation**
+**3. Install Python dependencies**
+
+All packages are pinned in `requirements.txt` to avoid version conflicts:
+
+```bash
+pip install -r requirements.txt
+```
+
+**4. Verify the installation**
 
 ```python
 import speech_recognition as sr
