@@ -1,4 +1,4 @@
-# Exam: Speech to Text with Python and Google Web Speech API
+# Workshop: Speech to Text with Python and Google Web Speech API
 
 ---
 
@@ -62,7 +62,7 @@ is ready.
 
 ---
 
-## Question 1 — Listing Devices
+## Task 1 — Listing Devices
 
 Write a function `list_microphones()` that prints every available microphone on
 the system together with its device index, using the `speech_recognition` library.
@@ -95,7 +95,7 @@ pairs each name with its position, which is also the `device_index` you pass to
 
 ---
 
-## Question 2 — Single-Shot Transcription
+## Task 2 — Single-Shot Transcription
 
 Write a function `transcribe_once(mic_index=None, language="en-US")` that:
 
@@ -147,7 +147,7 @@ def transcribe_once(mic_index=None, language="en-US"):
 
 ---
 
-## Question 3 — Error Handling
+## Task 3 — Error Handling
 
 Explain the difference between `sr.UnknownValueError` and `sr.RequestError`.
 When is each exception raised, and why must both be caught separately?
@@ -184,7 +184,7 @@ except sr.RequestError as e:
 
 ---
 
-## Question 4 — Continuous Transcription
+## Task 4 — Continuous Transcription
 
 Write a function `transcribe_loop(mic_index=None, language="en-US")` that:
 
@@ -249,7 +249,7 @@ def transcribe_loop(mic_index=None, language="en-US"):
 
 ---
 
-## Question 5 — Putting It All Together
+## Task 5 — Putting It All Together
 
 Write a `__main__` block that:
 

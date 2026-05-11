@@ -1,4 +1,4 @@
-# Exam: Text to Speech with Python and pyttsx3
+# Workshop: Text to Speech with Python and pyttsx3
 
 ---
 
@@ -58,7 +58,7 @@ If this prints two numbers without errors, your environment is ready.
 
 ---
 
-## Question 1 — Listing Voices
+## Task 1 — Listing Voices
 
 Write a function `list_voices(engine)` that prints every available voice on
 the system together with its index number, using a `pyttsx3` engine instance.
@@ -92,7 +92,7 @@ index that you can pass to `speak_once()` or `speak_loop()`.
 
 ---
 
-## Question 2 — Single-Shot Speech
+## Task 2 — Single-Shot Speech
 
 Write a function `speak_once(text, voice_index=None, rate=150, volume=1.0)` that:
 
@@ -137,7 +137,7 @@ def speak_once(text, voice_index=None, rate=150, volume=1.0):
 
 ---
 
-## Question 3 — Controlling the Voice
+## Task 3 — Controlling the Voice
 
 Explain the difference between `engine.say()` and `engine.runAndWait()`.
 Why must both be called to produce audio?
@@ -167,7 +167,7 @@ Calling `say()` without `runAndWait()` produces no sound. Calling
 
 ---
 
-## Question 4 — Continuous Speech Loop
+## Task 4 — Continuous Speech Loop
 
 Write a function `speak_loop(voice_index=None, rate=150, volume=1.0)` that:
 
@@ -226,7 +226,7 @@ def speak_loop(voice_index=None, rate=150, volume=1.0):
 
 ---
 
-## Question 5 — Putting It All Together
+## Task 5 — Putting It All Together
 
 Write a `__main__` block that:
 
