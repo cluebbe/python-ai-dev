@@ -22,7 +22,7 @@ User speaks / types
        ↓
   Speech-to-Text  (SpeechRecognition + Google Web Speech)
        ↓
-  Language Model  (DialoGPT via transformers pipeline)
+  Language Model  (DialoGPT via AutoModelForCausalLM)
        ↓
   Text-to-Speech  (pyttsx3)  +  print to terminal
 ```
@@ -78,31 +78,42 @@ If both version numbers print without errors, your environment is ready.
 ## Task 1 — Loading the Model
 
 Write a function `build_chatbot()` that loads the `microsoft/DialoGPT-medium`
-model into a Hugging Face `text-generation` pipeline and returns it.
+model and its tokenizer directly using `AutoModelForCausalLM` and
+`AutoTokenizer`, and returns both.
 
-Print a message before loading so the user knows to wait, and another once it
-is ready.
+Also suppress transformers warnings at the top of the file so only errors are
+shown.
 
 <details>
 <summary>Solution</summary>
 
 ```python
-from transformers import pipeline
+import logging
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+logging.getLogger("transformers").setLevel(logging.ERROR)
 
 def build_chatbot():
     print("Loading DialoGPT-medium (downloads ~863 MB on first run)...")
-    bot = pipeline("text-generation", model="microsoft/DialoGPT-medium")
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-medium")
+    tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-medium")
+    model.eval()
     print("Model ready.\n")
-    return bot
+    return model, tokenizer
 ```
 
 **Key points:**
-- `pipeline("text-generation", ...)` wraps the model in a callable that
-  accepts a text prompt and returns generated text.
-- The model is downloaded once and cached in `~/.cache/huggingface/` on
-  subsequent runs.
-- Storing the pipeline in a variable and reusing it avoids reloading the
-  model on every call, which would be very slow.
+- `AutoModelForCausalLM` loads the model weights directly, giving full control
+  over tokenisation and generation — unlike `pipeline`, which overrides
+  tokenizer settings internally.
+- `tokenizer.pad_token = tokenizer.eos_token` is required because DialoGPT has
+  no pad token defined; without it padding falls back to an incorrect default.
+- `model.eval()` disables dropout layers, which are only needed during
+  training — inference is faster and deterministic without them.
+- `logging.getLogger("transformers").setLevel(logging.ERROR)` silences
+  transformers' own logger (separate from Python's `warnings` module).
+- The model is downloaded once and cached in `~/.cache/huggingface/`.
 
 </details>
 
@@ -110,57 +121,76 @@ def build_chatbot():
 
 ## Task 2 — Generating a Reply
 
-Write a function `get_reply(user_input, history, chatbot)` that:
+Write a function `get_reply(user_input, history_ids, model, tokenizer)` that:
 
-1. Appends `user_input` to `history`.
-2. Formats the conversation as a single string where each turn is separated
-   by the `<|endoftext|>` token (DialoGPT's turn separator).
-3. Passes the formatted string to the pipeline and extracts only the newly
-   generated reply (not the original prompt).
-4. Appends the reply to `history` and returns `(reply, history)`.
-5. Falls back to a safe default string if the model returns an empty reply.
+1. Encodes `user_input` (plus the EOS token) into a tensor of token IDs.
+2. Concatenates it with `history_ids` from previous turns (`None` on the first turn).
+3. Trims the combined input to the most recent 512 tokens to stay within
+   DialoGPT's 1024-token context limit.
+4. Generates a reply using the model directly, passing an explicit all-ones
+   attention mask.
+5. Decodes only the newly generated tokens into a string and returns
+   `(reply, output_ids)`.
+6. Falls back to a safe default string if the model returns an empty reply.
 
 <details>
 <summary>Solution</summary>
 
 ```python
-EOS = "<|endoftext|>"
+import torch
 
-def get_reply(user_input, history, chatbot):
-    history.append(user_input)
-    prompt = EOS.join(history) + EOS
+MAX_HISTORY_TOKENS = 512
 
-    output = chatbot(
-        prompt,
-        max_new_tokens=100,
-        pad_token_id=50256,
-        do_sample=True,
-        temperature=0.7,
-        top_p=0.9,
+def get_reply(user_input, history_ids, model, tokenizer):
+    new_ids = tokenizer.encode(
+        user_input + tokenizer.eos_token,
+        return_tensors="pt",
     )
 
-    generated = output[0]["generated_text"]
-    reply = generated[len(prompt):].split(EOS)[0].strip()
+    input_ids = (
+        torch.cat([history_ids, new_ids], dim=-1)
+        if history_ids is not None
+        else new_ids
+    )
+
+    if input_ids.shape[-1] > MAX_HISTORY_TOKENS:
+        input_ids = input_ids[:, -MAX_HISTORY_TOKENS:]
+
+    attention_mask = torch.ones_like(input_ids)
+
+    with torch.no_grad():
+        output_ids = model.generate(
+            input_ids,
+            attention_mask=attention_mask,
+            max_new_tokens=100,
+            pad_token_id=tokenizer.eos_token_id,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9,
+        )
+
+    reply = tokenizer.decode(
+        output_ids[:, input_ids.shape[-1]:][0],
+        skip_special_tokens=True,
+    ).strip()
 
     if not reply:
         reply = "I'm not sure how to respond to that."
 
-    history.append(reply)
-    return reply, history
+    return reply, output_ids
 ```
 
 **Key points:**
-- DialoGPT was trained on conversations formatted with `<|endoftext|>` between
-  turns. Using this separator lets the model understand the full conversation
-  context.
-- `pad_token_id=50256` suppresses a warning — 50256 is the EOS token ID for
-  the GPT-2 family.
-- `do_sample=True` with `temperature=0.7` and `top_p=0.9` produces varied,
-  natural-sounding replies instead of deterministic, repetitive ones.
-- The pipeline returns the **full string** (prompt + reply). Slicing
-  `generated[len(prompt):]` isolates only the new content.
-- `.split(EOS)[0]` discards any extra turns the model may have hallucinated
-  beyond the first reply.
+- History is stored as a **token ID tensor**, not a list of strings — this is
+  the native format DialoGPT was designed for and produces coherent results.
+- `MAX_HISTORY_TOKENS = 512` prevents the context from overflowing DialoGPT's
+  1024-token limit; without this the model deteriorates after a few exchanges.
+- `torch.ones_like(input_ids)` creates an all-ones attention mask, explicitly
+  telling the model there is no padding in the sequence.
+- `torch.no_grad()` disables gradient computation during inference, saving
+  memory and speeding up generation.
+- `output_ids[:, input_ids.shape[-1]:]` slices off the input prefix, leaving
+  only the newly generated reply tokens.
 
 </details>
 
@@ -241,10 +271,10 @@ def respond(text, engine):
 
 ## Task 5 — Main Chat Loop
 
-Write a function `chat_loop(chatbot, tts_engine, recognizer=None, mic=None, use_voice=True)`
+Write a function `chat_loop(model, tokenizer, tts_engine, recognizer=None, mic=None, use_voice=True)`
 that:
 
-1. Starts with an empty conversation `history`.
+1. Starts with `history_ids = None` (no prior context).
 2. Each iteration collects input via voice (if `use_voice=True`) or keyboard.
 3. Skips the iteration if no input was captured.
 4. Stops cleanly when the user says or types `"quit"`, `"stop"`, or `"exit"`,
@@ -256,8 +286,8 @@ that:
 <summary>Solution</summary>
 
 ```python
-def chat_loop(chatbot, tts_engine, recognizer=None, mic=None, use_voice=True):
-    history = []
+def chat_loop(model, tokenizer, tts_engine, recognizer=None, mic=None, use_voice=True):
+    history_ids = None
     print("Chat started. Say or type 'quit' to exit.\n")
 
     while True:
@@ -273,17 +303,17 @@ def chat_loop(chatbot, tts_engine, recognizer=None, mic=None, use_voice=True):
             respond("Goodbye!", tts_engine)
             break
 
-        reply, history = get_reply(user_input, history, chatbot)
+        reply, history_ids = get_reply(user_input, history_ids, model, tokenizer)
         respond(reply, tts_engine)
 ```
 
 **Key points:**
-- `history` accumulates every turn so DialoGPT has full context throughout
-  the session. Resetting it would make the bot forget earlier turns.
+- `history_ids = None` on the first turn signals `get_reply()` to skip
+  concatenation and use only the new message as input.
+- `history_ids` is updated each turn with the full output tensor, so
+  DialoGPT always has the recent conversation as context.
 - Checking `user_input is None` before the stop-word check avoids a
   `NoneType` error when `listen()` returns `None`.
-- `respond()` is called for the farewell too, so the bot always speaks its
-  last message before the program ends.
 
 </details>
 
@@ -302,40 +332,37 @@ Write a `__main__` block that:
 <summary>Solution</summary>
 
 ```python
+import logging
+import torch
 import speech_recognition as sr
 import pyttsx3
-from transformers import pipeline
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
-EOS = "<|endoftext|>"
+logging.getLogger("transformers").setLevel(logging.ERROR)
+MAX_HISTORY_TOKENS = 512
 
 if __name__ == "__main__":
     print("=== Chatbot Tutorial — Speech + DialoGPT ===\n")
 
-    bot = build_chatbot()
+    model, tokenizer = build_chatbot()
 
-    tts = pyttsx3.init()
-    tts.setProperty("rate", 160)
-    tts.setProperty("volume", 1.0)
+    tts = build_tts()
 
     mode = input("Input mode — type 'v' for voice or 't' for text: ").strip().lower()
     use_voice = (mode == "v")
 
     if use_voice:
-        recognizer = sr.Recognizer()
-        mic = sr.Microphone()
-        with mic as source:
-            print("Calibrating microphone for ambient noise...")
-            recognizer.adjust_for_ambient_noise(source, duration=1)
-        print("Microphone ready.\n")
-        chat_loop(bot, tts, recognizer, mic, use_voice=True)
+        recognizer, mic = build_recognizer()
+        chat_loop(model, tokenizer, tts, recognizer, mic, use_voice=True)
     else:
-        chat_loop(bot, tts, use_voice=False)
+        chat_loop(model, tokenizer, tts, use_voice=False)
 ```
 
 **Key points:**
-- The TTS engine and recognizer are created once in `__main__` and passed
-  into the functions — this avoids reinitialising hardware drivers on every
-  turn.
+- `model, tokenizer = build_chatbot()` unpacks the tuple returned by the
+  function — both are needed separately by `get_reply()`.
+- The TTS engine and recognizer are created once and passed into the loop —
+  this avoids reinitialising hardware drivers on every turn.
 - Microphone calibration only happens in voice mode, keeping startup fast
   when using keyboard input.
 - `use_voice = (mode == "v")` is a concise boolean assignment — it evaluates

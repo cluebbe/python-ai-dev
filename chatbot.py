@@ -19,16 +19,15 @@
 # The first run will download the DialoGPT-medium model (~863 MB).
 # No API key is required for any component.
 
-import speech_recognition as sr              # Library for capturing and transcribing microphone audio
-import pyttsx3                               # Offline text-to-speech engine
-from transformers import pipeline            # Hugging Face helper that wraps models into simple callable objects
+import logging                                                         # Standard library logging — used to silence the transformers logger
+import torch                                                           # PyTorch — required to run the DialoGPT model
+import speech_recognition as sr                                        # Library for capturing and transcribing microphone audio
+import pyttsx3                                                         # Offline text-to-speech engine
+from transformers import AutoTokenizer, AutoModelForCausalLM           # Load the tokenizer and model directly
 
+logging.getLogger("transformers").setLevel(logging.ERROR)              # Suppress transformers warnings — they use their own logger, not Python's warnings module
 
-# ---------------------------------------------------------------------------
-# Global constants
-# ---------------------------------------------------------------------------
-
-EOS = "<|endoftext|>"  # Special token DialoGPT uses to separate conversation turns
+MAX_HISTORY_TOKENS = 512  # Keep only the most recent 512 tokens — DialoGPT-medium's hard limit is 1024; staying at half leaves room for each new reply
 
 
 # ---------------------------------------------------------------------------
@@ -36,11 +35,14 @@ EOS = "<|endoftext|>"  # Special token DialoGPT uses to separate conversation tu
 # ---------------------------------------------------------------------------
 
 def build_chatbot():
-    """Load DialoGPT-medium and return a text-generation pipeline."""
+    """Load DialoGPT-medium and return (model, tokenizer)."""
     print("Loading DialoGPT-medium (downloads ~863 MB on first run)...")  # Warn the user that this may take a moment
-    bot = pipeline("text-generation", model="microsoft/DialoGPT-medium")  # Wrap the model in a text-generation pipeline
-    print("Model ready.\n")  # Confirm the model has loaded successfully
-    return bot  # Return the pipeline so the caller can store and reuse it
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-medium")  # Load the tokenizer that matches the model's vocabulary
+    tokenizer.pad_token = tokenizer.eos_token                              # DialoGPT has no pad token; reuse EOS so padding works correctly
+    model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-medium")  # Load the model weights
+    model.eval()                                                           # Switch to inference mode — disables dropout for deterministic output
+    print("Model ready.\n")                                                # Confirm the model has loaded successfully
+    return model, tokenizer                                                # Return both so callers can use them together
 
 
 def build_tts():
@@ -114,59 +116,77 @@ def respond(text, engine):
 # Language model: generate a reply with DialoGPT
 # ---------------------------------------------------------------------------
 
-def get_reply(user_input, history, chatbot):
+def get_reply(user_input, history_ids, model, tokenizer):
     """
-    Append user_input to the conversation history, generate a reply with
-    DialoGPT, and return (reply_text, updated_history).
+    Encode user_input, append it to the token-ID history, generate a reply,
+    and return (reply_text, updated_history_ids).
 
     Args:
-        user_input: The user's latest message as a plain string.
-        history:    List of alternating user/bot strings from this session.
-        chatbot:    The text-generation pipeline returned by build_chatbot().
+        user_input:  The user's latest message as a plain string.
+        history_ids: torch.Tensor of token IDs from previous turns, or None
+                     at the start of a conversation.
+        model:       The AutoModelForCausalLM returned by build_chatbot().
+        tokenizer:   The AutoTokenizer returned by build_chatbot().
 
     Returns:
-        A tuple (reply: str, history: list).
+        A tuple (reply: str, history_ids: torch.Tensor).
     """
-    history.append(user_input)                    # Add the user's message to the running conversation log
-    prompt = EOS.join(history) + EOS              # Join all turns with the EOS token; DialoGPT uses this format to track context
-
-    output = chatbot(
-        prompt,
-        max_new_tokens=100,    # Generate at most 100 new tokens so replies stay concise
-        pad_token_id=50256,    # 50256 is the EOS token ID for GPT-2 / DialoGPT; avoids a pad-token warning
-        do_sample=True,        # Use sampling instead of greedy decoding for more natural, varied replies
-        temperature=0.7,       # Lower temperature → more focused replies; higher → more creative but less coherent
-        top_p=0.9,             # Nucleus sampling: only consider tokens whose cumulative probability reaches 90%
+    new_ids = tokenizer.encode(                          # Tokenise the user's message into a tensor of integer IDs
+        user_input + tokenizer.eos_token,                # Append EOS so the model knows this turn has ended
+        return_tensors="pt",                             # Return a PyTorch tensor rather than a plain list
     )
 
-    generated = output[0]["generated_text"]         # The pipeline returns the full string including the original prompt
-    reply = generated[len(prompt):]                 # Strip the prompt prefix to isolate only the newly generated text
-    reply = reply.split(EOS)[0].strip()             # DialoGPT may generate multiple turns; take only the first one
+    input_ids = (                                        # Build the full prompt by prepending any previous turns
+        torch.cat([history_ids, new_ids], dim=-1)        # Concatenate along the sequence dimension if history exists
+        if history_ids is not None                       # On the very first turn there is no history yet
+        else new_ids                                     # So just use the new message on its own
+    )
 
-    if not reply:                                   # Guard against an empty reply (can happen on very short inputs)
+    if input_ids.shape[-1] > MAX_HISTORY_TOKENS:         # If the conversation has grown too long for the model's context window
+        input_ids = input_ids[:, -MAX_HISTORY_TOKENS:]   # Discard the oldest tokens, keeping only the most recent ones
+
+    attention_mask = torch.ones_like(input_ids)          # All 1s = every token is real, none is padding
+
+    with torch.no_grad():                                # Disable gradient tracking — not needed for inference, saves memory
+        output_ids = model.generate(
+            input_ids,
+            attention_mask=attention_mask,               # Explicitly tell the model which tokens to attend to (all of them)
+            max_new_tokens=100,                          # Generate at most 100 new tokens so replies stay concise
+            pad_token_id=tokenizer.eos_token_id,         # Use EOS as the pad token ID
+            do_sample=True,                              # Use sampling for more natural, varied replies
+            temperature=0.7,                             # Lower = more focused; higher = more creative but less coherent
+            top_p=0.9,                                   # Nucleus sampling: only consider tokens whose cumulative probability reaches 90%
+        )
+
+    reply = tokenizer.decode(                            # Convert the newly generated token IDs back into a string
+        output_ids[:, input_ids.shape[-1]:][0],          # Slice off the input prefix — we only want the new tokens
+        skip_special_tokens=True,                        # Remove EOS and other special tokens from the output string
+    ).strip()
+
+    if not reply:                                        # Guard against an empty reply (can happen on very short inputs)
         reply = "I'm not sure how to respond to that."  # Fall back to a safe default so the conversation doesn't stall
 
-    history.append(reply)  # Add the bot's reply to the history so future turns have full context
-    return reply, history  # Return the reply text and the updated history list
+    return reply, output_ids  # Return the reply and the full token history (input + reply) for the next turn
 
 
 # ---------------------------------------------------------------------------
 # Main chat loop
 # ---------------------------------------------------------------------------
 
-def chat_loop(chatbot, tts_engine, recognizer=None, mic=None, use_voice=True):
+def chat_loop(model, tokenizer, tts_engine, recognizer=None, mic=None, use_voice=True):
     """
     Run the conversation loop until the user says or types 'quit', 'stop',
     or 'exit'.
 
     Args:
-        chatbot:     The DialoGPT text-generation pipeline.
+        model:       The AutoModelForCausalLM returned by build_chatbot().
+        tokenizer:   The AutoTokenizer returned by build_chatbot().
         tts_engine:  The pyttsx3 engine used for audio output.
         recognizer:  sr.Recognizer instance (required when use_voice=True).
         mic:         sr.Microphone instance (required when use_voice=True).
         use_voice:   True = accept spoken input; False = accept keyboard input.
     """
-    history = []  # Start with an empty conversation history for this session
+    history_ids = None  # No token history at the start; None signals the first turn to get_reply
 
     print("Chat started. Say or type 'quit' to exit.\n")  # Tell the user how to stop
 
@@ -180,12 +200,11 @@ def chat_loop(chatbot, tts_engine, recognizer=None, mic=None, use_voice=True):
             continue            # Skip this iteration and prompt the user again
 
         if user_input.strip().lower() in ("quit", "stop", "exit"):  # Check for a stop command (case-insensitive)
-            print("Goodbye!")          # Print a farewell message
-            respond("Goodbye!", tts_engine)  # Speak the farewell so the user hears it too
-            break                      # Exit the while loop and end the session
+            respond("Goodbye!", tts_engine)  # Speak and print the farewell
+            break                            # Exit the while loop and end the session
 
-        reply, history = get_reply(user_input, history, chatbot)  # Generate the bot's response using DialoGPT
-        respond(reply, tts_engine)                                 # Speak and print the response
+        reply, history_ids = get_reply(user_input, history_ids, model, tokenizer)  # Generate the bot's response using DialoGPT
+        respond(reply, tts_engine)                                                  # Speak and print the response
 
 
 # ---------------------------------------------------------------------------
@@ -195,14 +214,14 @@ def chat_loop(chatbot, tts_engine, recognizer=None, mic=None, use_voice=True):
 if __name__ == "__main__":  # Only run when this file is executed directly (not imported)
     print("=== Chatbot Tutorial — Speech + DialoGPT ===\n")  # Print a title banner
 
-    bot = build_chatbot()    # Load the DialoGPT model
-    tts = build_tts()        # Set up the text-to-speech engine
+    model, tokenizer = build_chatbot()  # Load DialoGPT model and its tokenizer
+    tts = build_tts()                   # Set up the text-to-speech engine
 
     mode = input("Input mode — type 'v' for voice or 't' for text: ").strip().lower()  # Ask the user which input method to use
     use_voice = (mode == "v")  # True if the user chose voice, False for keyboard
 
-    if use_voice:                                    # Only set up the microphone if voice mode was selected
-        recognizer, mic = build_recognizer()         # Calibrate the mic and create the recognizer
-        chat_loop(bot, tts, recognizer, mic, use_voice=True)   # Start the voice-input chat loop
+    if use_voice:                                                              # Only set up the microphone if voice mode was selected
+        recognizer, mic = build_recognizer()                                   # Calibrate the mic and create the recognizer
+        chat_loop(model, tokenizer, tts, recognizer, mic, use_voice=True)      # Start the voice-input chat loop
     else:
-        chat_loop(bot, tts, use_voice=False)         # Start the text-input chat loop (no mic needed)
+        chat_loop(model, tokenizer, tts, use_voice=False)                      # Start the text-input chat loop (no mic needed)
