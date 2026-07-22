@@ -53,16 +53,13 @@ def speak_loop(voice_index=None, rate=150, volume=1.0):
     """
     Repeatedly prompt the user to type text and speak it aloud.
     Type 'quit' or 'stop' to exit.
+
+    A fresh engine instance is created for each utterance rather than
+    reused across iterations. On Windows, the SAPI5 driver's event loop
+    only runs correctly once per engine instance — calling runAndWait()
+    a second time on the same instance silently produces no audio, even
+    though say() queues the text without error.
     """
-    engine = pyttsx3.init()  # Create a single engine instance to reuse across all iterations
-
-    engine.setProperty("rate", rate)      # Set the speaking rate for the whole session
-    engine.setProperty("volume", volume)  # Set the volume for the whole session
-
-    if voice_index is not None:  # Only swap the voice if one was specified
-        voices = engine.getProperty("voices")  # Retrieve all available voices
-        engine.setProperty("voice", voices[voice_index].id)  # Apply the chosen voice
-
     print("\nText-to-Speech loop. Type 'quit' or 'stop' to exit.\n")  # Explain how to end the loop
 
     while True:  # Keep prompting until the user types a stop word
@@ -76,10 +73,7 @@ def speak_loop(voice_index=None, rate=150, volume=1.0):
             print("(nothing typed, try again)")  # Prompt the user to type something
             continue  # Go back to the top of the loop
 
-        engine.say(text)     # Queue the typed text to be spoken
-        engine.runAndWait()  # Play the speech and block until it finishes
-
-    engine.stop()  # Release the audio driver when the loop ends
+        speak_once(text, voice_index=voice_index, rate=rate, volume=volume)  # Speak using a fresh engine instance
 
 
 # ---------------------------------------------------------------------------

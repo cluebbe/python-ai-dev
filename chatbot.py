@@ -45,14 +45,6 @@ def build_chatbot():
     return model, tokenizer                                                # Return both so callers can use them together
 
 
-def build_tts():
-    """Create and return a configured pyttsx3 TTS engine."""
-    engine = pyttsx3.init()              # Initialise the platform's default speech driver
-    engine.setProperty("rate", 160)      # Set speaking speed to 160 words per minute (slightly slower than default for clarity)
-    engine.setProperty("volume", 1.0)    # Set volume to maximum
-    return engine                        # Return the engine so the caller can reuse it across turns
-
-
 def build_recognizer(mic_index=None):
     """Calibrate a Recognizer and return it alongside the Microphone object."""
     recognizer = sr.Recognizer()                          # Create the object that analyses audio and calls Google Web Speech
@@ -105,11 +97,23 @@ def get_text_input():
 # Output: speak + print
 # ---------------------------------------------------------------------------
 
-def respond(text, engine):
-    """Print the bot's reply as text and speak it aloud."""
-    print(f"\nBot: {text}\n")  # Print the response so the user can read it
-    engine.say(text)           # Queue the text to be spoken
-    engine.runAndWait()        # Play the queued audio and block until playback finishes
+def respond(text, rate=160, volume=1.0):
+    """
+    Print the bot's reply as text and speak it aloud.
+
+    A fresh pyttsx3 engine is created for each call rather than reused
+    across turns. On Windows, the SAPI5 driver's event loop only runs
+    correctly once per engine instance — reusing one instance across
+    multiple say()/runAndWait() calls silently produces no audio after
+    the first turn, even though say() queues the text without error.
+    """
+    print(f"\nBot: {text}\n")         # Print the response so the user can read it
+    engine = pyttsx3.init()           # Create a fresh speech driver instance for this turn
+    engine.setProperty("rate", rate)      # Set speaking speed
+    engine.setProperty("volume", volume)  # Set playback volume
+    engine.say(text)                  # Queue the text to be spoken
+    engine.runAndWait()               # Play the queued audio and block until playback finishes
+    engine.stop()                     # Release the audio driver so it can be used again next turn
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +177,7 @@ def get_reply(user_input, history_ids, model, tokenizer):
 # Main chat loop
 # ---------------------------------------------------------------------------
 
-def chat_loop(model, tokenizer, tts_engine, recognizer=None, mic=None, use_voice=True):
+def chat_loop(model, tokenizer, recognizer=None, mic=None, use_voice=True, tts_rate=160, tts_volume=1.0):
     """
     Run the conversation loop until the user says or types 'quit', 'stop',
     or 'exit'.
@@ -181,10 +185,11 @@ def chat_loop(model, tokenizer, tts_engine, recognizer=None, mic=None, use_voice
     Args:
         model:       The AutoModelForCausalLM returned by build_chatbot().
         tokenizer:   The AutoTokenizer returned by build_chatbot().
-        tts_engine:  The pyttsx3 engine used for audio output.
         recognizer:  sr.Recognizer instance (required when use_voice=True).
         mic:         sr.Microphone instance (required when use_voice=True).
         use_voice:   True = accept spoken input; False = accept keyboard input.
+        tts_rate:    Words per minute for spoken replies.
+        tts_volume:  Volume level from 0.0 (silent) to 1.0 (full) for spoken replies.
     """
     history_ids = None  # No token history at the start; None signals the first turn to get_reply
 
@@ -200,11 +205,11 @@ def chat_loop(model, tokenizer, tts_engine, recognizer=None, mic=None, use_voice
             continue            # Skip this iteration and prompt the user again
 
         if user_input.strip().lower() in ("quit", "stop", "exit"):  # Check for a stop command (case-insensitive)
-            respond("Goodbye!", tts_engine)  # Speak and print the farewell
-            break                            # Exit the while loop and end the session
+            respond("Goodbye!", tts_rate, tts_volume)  # Speak and print the farewell
+            break                                      # Exit the while loop and end the session
 
         reply, history_ids = get_reply(user_input, history_ids, model, tokenizer)  # Generate the bot's response using DialoGPT
-        respond(reply, tts_engine)                                                  # Speak and print the response
+        respond(reply, tts_rate, tts_volume)                                        # Speak and print the response
 
 
 # ---------------------------------------------------------------------------
@@ -215,13 +220,12 @@ if __name__ == "__main__":  # Only run when this file is executed directly (not 
     print("=== Chatbot Tutorial — Speech + DialoGPT ===\n")  # Print a title banner
 
     model, tokenizer = build_chatbot()  # Load DialoGPT model and its tokenizer
-    tts = build_tts()                   # Set up the text-to-speech engine
 
     mode = input("Input mode — type 'v' for voice or 't' for text: ").strip().lower()  # Ask the user which input method to use
     use_voice = (mode == "v")  # True if the user chose voice, False for keyboard
 
-    if use_voice:                                                              # Only set up the microphone if voice mode was selected
-        recognizer, mic = build_recognizer()                                   # Calibrate the mic and create the recognizer
-        chat_loop(model, tokenizer, tts, recognizer, mic, use_voice=True)      # Start the voice-input chat loop
+    if use_voice:                                                     # Only set up the microphone if voice mode was selected
+        recognizer, mic = build_recognizer()                          # Calibrate the mic and create the recognizer
+        chat_loop(model, tokenizer, recognizer, mic, use_voice=True)  # Start the voice-input chat loop
     else:
-        chat_loop(model, tokenizer, tts, use_voice=False)                      # Start the text-input chat loop (no mic needed)
+        chat_loop(model, tokenizer, use_voice=False)                  # Start the text-input chat loop (no mic needed)

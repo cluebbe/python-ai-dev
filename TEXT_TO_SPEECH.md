@@ -173,12 +173,11 @@ Calling `say()` without `runAndWait()` produces no sound. Calling
 
 Write a function `speak_loop(voice_index=None, rate=150, volume=1.0)` that:
 
-1. Creates a **single** engine instance to reuse across all iterations.
-2. Applies the rate, volume, and optional voice settings once before the loop.
-3. Repeatedly prompts the user to type text and speaks it aloud.
-4. Skips empty input with a friendly message instead of trying to speak nothing.
-5. Stops cleanly when the user types `"quit"`, `"stop"`, or `"exit"`.
-6. Releases the audio driver after the loop ends.
+1. Repeatedly prompts the user to type text and speaks it aloud.
+2. Skips empty input with a friendly message instead of trying to speak nothing.
+3. Stops cleanly when the user types `"quit"`, `"stop"`, or `"exit"`.
+4. Speaks each line with a **fresh** engine instance (via `speak_once()`)
+   rather than reusing one instance across iterations.
 
 <details>
 <summary>Solution</summary>
@@ -187,15 +186,6 @@ Write a function `speak_loop(voice_index=None, rate=150, volume=1.0)` that:
 import pyttsx3
 
 def speak_loop(voice_index=None, rate=150, volume=1.0):
-    engine = pyttsx3.init()
-
-    engine.setProperty("rate", rate)
-    engine.setProperty("volume", volume)
-
-    if voice_index is not None:
-        voices = engine.getProperty("voices")
-        engine.setProperty("voice", voices[voice_index].id)
-
     print("\nText-to-Speech loop. Type 'quit' or 'stop' to exit.\n")
 
     while True:
@@ -209,20 +199,22 @@ def speak_loop(voice_index=None, rate=150, volume=1.0):
             print("(nothing typed, try again)")
             continue
 
-        engine.say(text)
-        engine.runAndWait()
-
-    engine.stop()
+        speak_once(text, voice_index=voice_index, rate=rate, volume=volume)
 ```
 
 **Key points:**
-- The engine is created **once** outside the loop — reinitialising it on every
-  iteration is slow and can cause driver conflicts on some platforms.
+- **Do not** reuse a single engine instance across iterations. On Windows,
+  the SAPI5 driver's event loop only runs correctly once per engine
+  instance — a second `runAndWait()` call on the same instance silently
+  produces no audio, even though `say()` queues the text without error.
+  Creating a new engine per utterance (by delegating to `speak_once()`)
+  avoids this and works consistently across macOS, Windows, and Linux.
 - `text.strip().lower()` removes surrounding whitespace and normalises case so
   `"Quit"`, `"QUIT"`, and `" quit "` all trigger the exit condition.
-- The empty-input guard prevents `engine.say("")` from being called, which can
+- The empty-input guard prevents `speak_once("")` from being called, which can
   behave unexpectedly depending on the platform driver.
-- `engine.stop()` is called after `break` to cleanly release the audio driver.
+- `speak_once()` already handles setting rate/volume/voice and releasing the
+  audio driver (`engine.stop()`) after each utterance.
 
 </details>
 

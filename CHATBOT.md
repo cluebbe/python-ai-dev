@@ -245,17 +245,24 @@ def listen(recognizer, mic):
 
 ## Task 4 — Voice + Text Output
 
-Write a function `respond(text, engine)` that prints the bot's reply prefixed
-with `"Bot: "` and speaks it aloud using a `pyttsx3` engine.
+Write a function `respond(text, rate=160, volume=1.0)` that prints the bot's
+reply prefixed with `"Bot: "` and speaks it aloud, creating a **fresh**
+`pyttsx3` engine instance for each call rather than reusing one across turns.
 
 <details>
 <summary>Solution</summary>
 
 ```python
-def respond(text, engine):
+import pyttsx3
+
+def respond(text, rate=160, volume=1.0):
     print(f"\nBot: {text}\n")
+    engine = pyttsx3.init()
+    engine.setProperty("rate", rate)
+    engine.setProperty("volume", volume)
     engine.say(text)
     engine.runAndWait()
+    engine.stop()
 ```
 
 **Key points:**
@@ -264,6 +271,12 @@ def respond(text, engine):
 - `engine.say()` queues the text; `engine.runAndWait()` plays it and blocks
   until done — the next loop iteration only starts after the bot finishes
   speaking.
+- A new engine is created **every call** instead of being passed in and
+  reused. On Windows, the SAPI5 driver's event loop only runs correctly once
+  per engine instance — reusing one instance across turns causes every reply
+  after the first to be silently skipped, even though `say()` still queues
+  the text without error. Creating a short-lived engine per turn avoids this
+  and works consistently across macOS, Windows, and Linux.
 
 </details>
 
@@ -271,7 +284,7 @@ def respond(text, engine):
 
 ## Task 5 — Main Chat Loop
 
-Write a function `chat_loop(model, tokenizer, tts_engine, recognizer=None, mic=None, use_voice=True)`
+Write a function `chat_loop(model, tokenizer, recognizer=None, mic=None, use_voice=True, tts_rate=160, tts_volume=1.0)`
 that:
 
 1. Starts with `history_ids = None` (no prior context).
@@ -286,7 +299,7 @@ that:
 <summary>Solution</summary>
 
 ```python
-def chat_loop(model, tokenizer, tts_engine, recognizer=None, mic=None, use_voice=True):
+def chat_loop(model, tokenizer, recognizer=None, mic=None, use_voice=True, tts_rate=160, tts_volume=1.0):
     history_ids = None
     print("Chat started. Say or type 'quit' to exit.\n")
 
@@ -300,11 +313,11 @@ def chat_loop(model, tokenizer, tts_engine, recognizer=None, mic=None, use_voice
             continue
 
         if user_input.strip().lower() in ("quit", "stop", "exit"):
-            respond("Goodbye!", tts_engine)
+            respond("Goodbye!", tts_rate, tts_volume)
             break
 
         reply, history_ids = get_reply(user_input, history_ids, model, tokenizer)
-        respond(reply, tts_engine)
+        respond(reply, tts_rate, tts_volume)
 ```
 
 **Key points:**
@@ -314,6 +327,9 @@ def chat_loop(model, tokenizer, tts_engine, recognizer=None, mic=None, use_voice
   DialoGPT always has the recent conversation as context.
 - Checking `user_input is None` before the stop-word check avoids a
   `NoneType` error when `listen()` returns `None`.
+- `tts_rate` and `tts_volume` are passed through to `respond()` rather than
+  a shared engine instance, since `respond()` now builds its own engine per
+  call (see Task 4).
 
 </details>
 
@@ -323,7 +339,7 @@ def chat_loop(model, tokenizer, tts_engine, recognizer=None, mic=None, use_voice
 
 Write a `__main__` block that:
 
-1. Loads the chatbot model and TTS engine.
+1. Loads the chatbot model.
 2. Asks the user whether they want voice or text input.
 3. Sets up the microphone and calibrates for ambient noise if voice was chosen.
 4. Starts the chat loop in the appropriate mode.
@@ -346,23 +362,25 @@ if __name__ == "__main__":
 
     model, tokenizer = build_chatbot()
 
-    tts = build_tts()
-
     mode = input("Input mode — type 'v' for voice or 't' for text: ").strip().lower()
     use_voice = (mode == "v")
 
     if use_voice:
         recognizer, mic = build_recognizer()
-        chat_loop(model, tokenizer, tts, recognizer, mic, use_voice=True)
+        chat_loop(model, tokenizer, recognizer, mic, use_voice=True)
     else:
-        chat_loop(model, tokenizer, tts, use_voice=False)
+        chat_loop(model, tokenizer, use_voice=False)
 ```
 
 **Key points:**
 - `model, tokenizer = build_chatbot()` unpacks the tuple returned by the
   function — both are needed separately by `get_reply()`.
-- The TTS engine and recognizer are created once and passed into the loop —
-  this avoids reinitialising hardware drivers on every turn.
+- There is no shared TTS engine to build up front — `respond()` creates a
+  short-lived engine for each reply (see Task 4), so no driver handle needs
+  to be threaded through the main block.
+- The recognizer and microphone are still created once and passed into the
+  loop, since re-calibrating the mic every turn would be slow and unnecessary
+  — this only applies to speech *input*, not speech *output*.
 - Microphone calibration only happens in voice mode, keeping startup fast
   when using keyboard input.
 - `use_voice = (mode == "v")` is a concise boolean assignment — it evaluates
