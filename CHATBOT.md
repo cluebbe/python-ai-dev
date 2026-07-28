@@ -1,4 +1,4 @@
-# Workshop: Conversational Chatbot with Speech I/O and DialoGPT
+# Workshop: Conversational Chatbot with Speech I/O and Qwen2.5
 
 ---
 
@@ -11,9 +11,18 @@ Speech — and adds a natural-language model to create a fully conversational
 chatbot. The user can speak or type, the model generates a reply, and the reply
 is both printed and spoken aloud.
 
-The language model is **DialoGPT-medium** by Microsoft, a GPT-2-based model
-fine-tuned on conversational data. It runs locally via the Hugging Face
-`transformers` library. No cloud API or account is required.
+The language model is **Qwen2.5-0.5B-Instruct**, a small instruction-tuned
+model that runs locally via the Hugging Face `transformers` library. It is
+Apache-2.0 licensed and ungated, so no cloud API, account, or access token is
+required — unlike Llama, which needs a Hugging Face login and a signed licence
+before it will download.
+
+> **Why an instruction-tuned model?** An older conversational model such as
+> DialoGPT is smaller and about 2.5x faster, but it was trained only to produce
+> a *plausible next reply* — never to answer questions or stay consistent. Asked
+> "are you a girl or a guy" it will say "Girl", then "I am a guy" two turns
+> later, and asked "what is a president" it answers "I am a woman". Instruction
+> tuning is what fixes that, and it is worth the extra seconds.
 
 **How the three components connect:**
 
@@ -22,7 +31,7 @@ User speaks / types
        ↓
   Speech-to-Text  (SpeechRecognition + Google Web Speech)
        ↓
-  Language Model  (DialoGPT via AutoModelForCausalLM)
+  Language Model  (Qwen2.5 via AutoModelForCausalLM)
        ↓
   Text-to-Speech  (pyttsx3)  +  print to terminal
 ```
@@ -31,7 +40,7 @@ User speaks / types
 
 **1. Create and activate a virtual environment with Python 3.12**
 
-> DialoGPT requires `torch`, which does not yet support Python 3.13+.
+> This project requires `torch`, which does not yet support Python 3.13+.
 > Use Python 3.12 to avoid compatibility issues.
 
 ```bash
@@ -60,8 +69,10 @@ All packages are pinned in `requirements.txt` to avoid version conflicts:
 pip install -r requirements.txt
 ```
 
-> The first run will download the DialoGPT-medium model (~863 MB). This only
+> The first run will download Qwen2.5-0.5B-Instruct (~1 GB). This only
 > happens once — it is cached locally afterwards.
+>
+> Expect roughly **10–15 seconds per reply** on a CPU.
 
 **4. Verify the installation**
 
@@ -77,27 +88,38 @@ If both version numbers print without errors, your environment is ready.
 
 ## Task 1 — Loading the Model
 
-Write a function `build_chatbot()` that loads the `microsoft/DialoGPT-medium`
-model and its tokenizer directly using `AutoModelForCausalLM` and
-`AutoTokenizer`, and returns both.
+Write a function `build_chatbot()` that loads `Qwen/Qwen2.5-0.5B-Instruct` and
+its tokenizer directly using `AutoModelForCausalLM` and `AutoTokenizer`, and
+returns both.
 
-Also suppress transformers warnings at the top of the file so only errors are
-shown.
+Also suppress transformers warnings at the top of the file, and define a system
+prompt that pins the assistant's identity and keeps replies short.
 
 <details>
 <summary>Solution</summary>
 
 ```python
 import logging
+import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
+MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+
+SYSTEM_PROMPT = (
+    "You are a friendly, concise voice assistant running locally on the Qwen2.5 model. "
+    "If you are asked your name, say you are a Qwen2.5 assistant. "
+    "Keep replies to one or two short sentences, since they will be read aloud."
+)
+
 def build_chatbot():
-    print("Loading DialoGPT-medium (downloads ~863 MB on first run)...")
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-medium")
-    tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-medium")
+    print(f"Loading {MODEL_NAME} (downloads ~1 GB on first run)...")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        torch_dtype=torch.float32,
+    )
     model.eval()
     print("Model ready.\n")
     return model, tokenizer
@@ -107,8 +129,20 @@ def build_chatbot():
 - `AutoModelForCausalLM` loads the model weights directly, giving full control
   over tokenisation and generation — unlike `pipeline`, which overrides
   tokenizer settings internally.
-- `tokenizer.pad_token = tokenizer.eos_token` is required because DialoGPT has
-  no pad token defined; without it padding falls back to an incorrect default.
+- **No `pad_token` assignment is needed.** Qwen ships a real pad token. Older
+  GPT-2-based models do not, which is why tutorials for those models must borrow
+  the EOS token first.
+- **`torch_dtype=torch.float32` is deliberate.** The tempting choice on a small
+  machine is `bfloat16`, which halves the weights to ~1 GB. But CPUs without
+  native bf16 support emulate it: measured on a 1.1 GHz Intel i5, float32 ran
+  **~11% faster** (3.34 vs 3.01 tokens/sec). At 0.5B parameters float32 needs
+  only ~2 GB, so the memory saving buys nothing here. Larger models flip this.
+- **The system prompt earns its place twice.** It pins the identity — asked its
+  name, the bare model confidently answers *"I am Claude, created by
+  Anthropic"*, a hallucination absorbed from assistant transcripts in its
+  training data. And it demands short replies, which matters far more here than
+  in a text-only chatbot: every reply is read aloud, and a rambling paragraph is
+  painful to sit through.
 - `model.eval()` disables dropout layers, which are only needed during
   training — inference is faster and deterministic without them.
 - `logging.getLogger("transformers").setLevel(logging.ERROR)` silences
@@ -119,19 +153,21 @@ def build_chatbot():
 
 ---
 
-## Task 2 — Generating a Reply
+## Task 2 — Building the Prompt and Generating a Reply
 
-Write a function `get_reply(user_input, history_ids, model, tokenizer)` that:
+Instruction-tuned models do not take raw concatenated text. They expect a
+**list of messages with roles**, rendered into the exact control tokens the
+model was trained on. Getting that formatting right is what separates coherent
+replies from garbage.
 
-1. Encodes `user_input` (plus the EOS token) into a tensor of token IDs.
-2. Concatenates it with `history_ids` from previous turns (`None` on the first turn).
-3. Trims the combined input to the most recent 512 tokens to stay within
-   DialoGPT's 1024-token context limit.
-4. Generates a reply using the model directly, passing an explicit all-ones
-   attention mask.
-5. Decodes only the newly generated tokens into a string and returns
-   `(reply, output_ids)`.
-6. Falls back to a safe default string if the model returns an empty reply.
+Write two functions:
+
+- `build_prompt(history, tokenizer)` — prepend the system prompt, render the
+  messages with `apply_chat_template`, and drop the oldest turns until the
+  result fits `MAX_CONTEXT_TOKENS`. Return `(input_ids, history)`.
+- `get_reply(user_input, history, model, tokenizer)` — append the user's
+  message, generate, decode only the new tokens, fall back to a safe default if
+  the reply is empty, and return `(reply, updated_history)`.
 
 <details>
 <summary>Solution</summary>
@@ -139,31 +175,38 @@ Write a function `get_reply(user_input, history_ids, model, tokenizer)` that:
 ```python
 import torch
 
-MAX_HISTORY_TOKENS = 512
+MAX_CONTEXT_TOKENS = 1024
+MAX_NEW_TOKENS = 128
 
-def get_reply(user_input, history_ids, model, tokenizer):
-    new_ids = tokenizer.encode(
-        user_input + tokenizer.eos_token,
-        return_tensors="pt",
-    )
+def build_prompt(history, tokenizer):
+    while True:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
 
-    input_ids = (
-        torch.cat([history_ids, new_ids], dim=-1)
-        if history_ids is not None
-        else new_ids
-    )
+        input_ids = tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
+        )
 
-    if input_ids.shape[-1] > MAX_HISTORY_TOKENS:
-        input_ids = input_ids[:, -MAX_HISTORY_TOKENS:]
+        if input_ids.shape[-1] <= MAX_CONTEXT_TOKENS:
+            return input_ids, history
+        if len(history) <= 1:
+            return input_ids, history
 
-    attention_mask = torch.ones_like(input_ids)
+        history = history[2:]   # drop the oldest user+assistant pair
+
+
+def get_reply(user_input, history, model, tokenizer):
+    history = history + [{"role": "user", "content": user_input}]
+
+    input_ids, history = build_prompt(history, tokenizer)
 
     with torch.no_grad():
         output_ids = model.generate(
             input_ids,
-            attention_mask=attention_mask,
-            max_new_tokens=100,
-            pad_token_id=tokenizer.eos_token_id,
+            attention_mask=torch.ones_like(input_ids),
+            max_new_tokens=MAX_NEW_TOKENS,
+            pad_token_id=tokenizer.pad_token_id,
             do_sample=True,
             temperature=0.7,
             top_p=0.9,
@@ -177,20 +220,42 @@ def get_reply(user_input, history_ids, model, tokenizer):
     if not reply:
         reply = "I'm not sure how to respond to that."
 
-    return reply, output_ids
+    return reply, history + [{"role": "assistant", "content": reply}]
 ```
 
 **Key points:**
-- History is stored as a **token ID tensor**, not a list of strings — this is
-  the native format DialoGPT was designed for and produces coherent results.
-- `MAX_HISTORY_TOKENS = 512` prevents the context from overflowing DialoGPT's
-  1024-token limit; without this the model deteriorates after a few exchanges.
+- **History is a list of `{"role", "content"}` dicts**, not a token tensor. The
+  roles are what let the model tell your words from its own — which is exactly
+  what a non-instruct model lacks, and why such models contradict themselves
+  about who they are.
+- **`apply_chat_template` writes the control tokens for you.** Qwen expects
+  turns wrapped as `<|im_start|>user … <|im_end|>`. Every model family uses a
+  different scheme, and the template ships with the tokenizer, so this one call
+  stays correct if you swap models. Hand-formatting that string is the single
+  most common cause of garbled output.
+- **`add_generation_prompt=True` is essential.** It appends the opening of the
+  assistant's turn, so the model continues *as the assistant*. Omit it and the
+  model often invents your next line instead of replying to you.
+- **Trimming drops whole turns, not tokens.** Cutting a token tensor at a fixed
+  length — the natural approach without roles — can slice through the middle of
+  a message and leave a dangling half-turn. Removing `history[:2]` (one user +
+  assistant pair) always leaves valid structure.
+- The system prompt is prepended **inside the loop**, so it is never part of
+  what gets trimmed. Store it in the history instead and a long conversation
+  would eventually delete the assistant's own instructions.
+- `len(history) <= 1` stops the loop when only the current user message remains.
+  Without that guard, one oversized message would loop forever.
+- `history + [...]` builds a **new list** rather than calling `.append()`. If
+  generation raises, the caller's history is left untouched instead of holding a
+  user message that never got a reply.
 - `torch.ones_like(input_ids)` creates an all-ones attention mask, explicitly
   telling the model there is no padding in the sequence.
 - `torch.no_grad()` disables gradient computation during inference, saving
   memory and speeding up generation.
 - `output_ids[:, input_ids.shape[-1]:]` slices off the input prefix, leaving
   only the newly generated reply tokens.
+- `MAX_NEW_TOKENS` is a **ceiling, not a target**. Generation stops at the
+  end-of-turn token, usually well short of it.
 
 </details>
 
@@ -287,7 +352,7 @@ def respond(text, rate=160, volume=1.0):
 Write a function `chat_loop(model, tokenizer, recognizer=None, mic=None, use_voice=True, tts_rate=160, tts_volume=1.0)`
 that:
 
-1. Starts with `history_ids = None` (no prior context).
+1. Starts with `history = []` (no prior context).
 2. Each iteration collects input via voice (if `use_voice=True`) or keyboard.
 3. Skips the iteration if no input was captured.
 4. Stops cleanly when the user says or types `"quit"`, `"stop"`, or `"exit"`,
@@ -300,7 +365,7 @@ that:
 
 ```python
 def chat_loop(model, tokenizer, recognizer=None, mic=None, use_voice=True, tts_rate=160, tts_volume=1.0):
-    history_ids = None
+    history = []
     print("Chat started. Say or type 'quit' to exit.\n")
 
     while True:
@@ -316,15 +381,20 @@ def chat_loop(model, tokenizer, recognizer=None, mic=None, use_voice=True, tts_r
             respond("Goodbye!", tts_rate, tts_volume)
             break
 
-        reply, history_ids = get_reply(user_input, history_ids, model, tokenizer)
+        print("(thinking...)")
+        reply, history = get_reply(user_input, history, model, tokenizer)
         respond(reply, tts_rate, tts_volume)
 ```
 
 **Key points:**
-- `history_ids = None` on the first turn signals `get_reply()` to skip
-  concatenation and use only the new message as input.
-- `history_ids` is updated each turn with the full output tensor, so
-  DialoGPT always has the recent conversation as context.
+- `history = []` on the first turn means `get_reply()` sends just the system
+  prompt plus the new message.
+- `history` is reassigned each turn from `get_reply()`'s return value, so the
+  model always has the recent conversation as context — and so any trimming
+  done inside `build_prompt()` is preserved rather than recomputed.
+- **The `(thinking...)` line is not decoration.** Generation takes 10–15 s on a
+  CPU. Without it the terminal sits silent and looks frozen, and in voice mode
+  the user cannot tell whether the bot heard them at all.
 - Checking `user_input is None` before the stop-word check avoids a
   `NoneType` error when `listen()` returns `None`.
 - `tts_rate` and `tts_volume` are passed through to `respond()` rather than
@@ -355,10 +425,11 @@ import pyttsx3
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 logging.getLogger("transformers").setLevel(logging.ERROR)
-MAX_HISTORY_TOKENS = 512
+MAX_CONTEXT_TOKENS = 1024
+MAX_NEW_TOKENS = 128
 
 if __name__ == "__main__":
-    print("=== Chatbot Tutorial — Speech + DialoGPT ===\n")
+    print("=== Chatbot Tutorial — Speech + Qwen2.5 ===\n")
 
     model, tokenizer = build_chatbot()
 

@@ -1,7 +1,7 @@
-# Conversational Chatbot with Speech I/O and DialoGPT
+# Conversational Chatbot with Speech I/O and Qwen2.5
 #
 # This tutorial builds a chatbot that accepts input by voice or keyboard,
-# generates natural-language replies with Microsoft's DialoGPT, and delivers
+# generates natural-language replies with Qwen2.5-0.5B-Instruct, and delivers
 # each response both as spoken audio (pyttsx3) and printed text.
 #
 # SETUP
@@ -16,18 +16,35 @@
 # On Linux:
 #   sudo apt-get install python3-pyaudio portaudio19-dev espeak
 #
-# The first run will download the DialoGPT-medium model (~863 MB).
+# The first run will download Qwen2.5-0.5B-Instruct (~1 GB).
 # No API key is required for any component.
+#
+# Expect roughly 10-15 seconds per reply on a CPU. That is slower than a small
+# non-instruct model, but it is the difference between a bot that answers your
+# question and one that free-associates.
 
 import logging                                                         # Standard library logging — used to silence the transformers logger
-import torch                                                           # PyTorch — required to run the DialoGPT model
+import torch                                                           # PyTorch — required to run the model
 import speech_recognition as sr                                        # Library for capturing and transcribing microphone audio
 import pyttsx3                                                         # Offline text-to-speech engine
 from transformers import AutoTokenizer, AutoModelForCausalLM           # Load the tokenizer and model directly
 
 logging.getLogger("transformers").setLevel(logging.ERROR)              # Suppress transformers warnings — they use their own logger, not Python's warnings module
 
-MAX_HISTORY_TOKENS = 512  # Keep only the most recent 512 tokens — DialoGPT-medium's hard limit is 1024; staying at half leaves room for each new reply
+MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"  # ~1 GB download; Apache-2.0 and ungated, so no Hugging Face login is needed
+MAX_CONTEXT_TOKENS = 1024  # Budget for the rendered prompt — every extra token of context slows CPU generation down
+MAX_NEW_TOKENS = 128       # A ceiling, not a target — generation stops at the end-of-turn token, usually well before this
+
+# The system prompt is prepended to every request and never stored in the
+# history, so trimming old turns can never discard it. Two things matter here:
+# pinning the identity (asked its name, the bare model claims to be "Claude,
+# created by Anthropic" — a hallucination from its training data), and demanding
+# short replies, because every reply gets read aloud by the speech engine.
+SYSTEM_PROMPT = (
+    "You are a friendly, concise voice assistant running locally on the Qwen2.5 model. "
+    "If you are asked your name, say you are a Qwen2.5 assistant. "
+    "Keep replies to one or two short sentences, since they will be read aloud."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -35,14 +52,16 @@ MAX_HISTORY_TOKENS = 512  # Keep only the most recent 512 tokens — DialoGPT-me
 # ---------------------------------------------------------------------------
 
 def build_chatbot():
-    """Load DialoGPT-medium and return (model, tokenizer)."""
-    print("Loading DialoGPT-medium (downloads ~863 MB on first run)...")  # Warn the user that this may take a moment
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-medium")  # Load the tokenizer that matches the model's vocabulary
-    tokenizer.pad_token = tokenizer.eos_token                              # DialoGPT has no pad token; reuse EOS so padding works correctly
-    model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-medium")  # Load the model weights
-    model.eval()                                                           # Switch to inference mode — disables dropout for deterministic output
-    print("Model ready.\n")                                                # Confirm the model has loaded successfully
-    return model, tokenizer                                                # Return both so callers can use them together
+    """Load Qwen2.5-0.5B-Instruct and return (model, tokenizer)."""
+    print(f"Loading {MODEL_NAME} (downloads ~1 GB on first run)...")  # Warn the user that this may take a moment
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)             # Load the tokenizer that matches the model's vocabulary
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        torch_dtype=torch.float32,  # float32 measured ~11% faster than bfloat16 on CPUs without native bf16 support, and 0.5B still only needs ~2 GB
+    )
+    model.eval()                                                      # Switch to inference mode — disables dropout for deterministic output
+    print("Model ready.\n")                                           # Confirm the model has loaded successfully
+    return model, tokenizer                                           # Return both so callers can use them together
 
 
 def build_recognizer(mic_index=None):
@@ -117,46 +136,67 @@ def respond(text, rate=160, volume=1.0):
 
 
 # ---------------------------------------------------------------------------
-# Language model: generate a reply with DialoGPT
+# Language model: generate a reply with Qwen2.5
 # ---------------------------------------------------------------------------
 
-def get_reply(user_input, history_ids, model, tokenizer):
+def build_prompt(history, tokenizer):
     """
-    Encode user_input, append it to the token-ID history, generate a reply,
-    and return (reply_text, updated_history_ids).
+    Render the conversation into model-ready token IDs, trimming if too long.
 
     Args:
-        user_input:  The user's latest message as a plain string.
-        history_ids: torch.Tensor of token IDs from previous turns, or None
-                     at the start of a conversation.
-        model:       The AutoModelForCausalLM returned by build_chatbot().
-        tokenizer:   The AutoTokenizer returned by build_chatbot().
+        history:   List of {"role", "content"} dicts, ending with the user's
+                   latest message.
+        tokenizer: The AutoTokenizer returned by build_chatbot().
 
     Returns:
-        A tuple (reply: str, history_ids: torch.Tensor).
+        A tuple (input_ids: torch.Tensor, history: list) — the history is
+        returned because it may have been trimmed.
     """
-    new_ids = tokenizer.encode(                          # Tokenise the user's message into a tensor of integer IDs
-        user_input + tokenizer.eos_token,                # Append EOS so the model knows this turn has ended
-        return_tensors="pt",                             # Return a PyTorch tensor rather than a plain list
-    )
+    while True:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history  # Re-added every time, so trimming can never remove it
 
-    input_ids = (                                        # Build the full prompt by prepending any previous turns
-        torch.cat([history_ids, new_ids], dim=-1)        # Concatenate along the sequence dimension if history exists
-        if history_ids is not None                       # On the very first turn there is no history yet
-        else new_ids                                     # So just use the new message on its own
-    )
+        # apply_chat_template renders the role structure into the exact control
+        # tokens Qwen was trained on (<|im_start|>user ... <|im_end|>). Writing
+        # that formatting by hand is the most common cause of garbled replies.
+        input_ids = tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,  # Append the opening of the assistant turn so the model replies instead of inventing your next line
+            return_tensors="pt",         # Return a PyTorch tensor rather than a plain list
+        )
 
-    if input_ids.shape[-1] > MAX_HISTORY_TOKENS:         # If the conversation has grown too long for the model's context window
-        input_ids = input_ids[:, -MAX_HISTORY_TOKENS:]   # Discard the oldest tokens, keeping only the most recent ones
+        if input_ids.shape[-1] <= MAX_CONTEXT_TOKENS:  # The prompt fits within the budget
+            return input_ids, history                   # Done
+        if len(history) <= 1:                           # Only the current user message left — cannot trim any further
+            return input_ids, history                   # Send it anyway rather than looping forever
 
-    attention_mask = torch.ones_like(input_ids)          # All 1s = every token is real, none is padding
+        history = history[2:]  # Drop the oldest user+assistant pair, keeping whole turns intact instead of cutting mid-message
+
+
+def get_reply(user_input, history, model, tokenizer):
+    """
+    Append user_input to the conversation, generate a reply, and return
+    (reply_text, updated_history).
+
+    Args:
+        user_input: The user's latest message as a plain string.
+        history:    List of {"role", "content"} dicts from previous turns,
+                    or [] at the start of a conversation.
+        model:      The AutoModelForCausalLM returned by build_chatbot().
+        tokenizer:  The AutoTokenizer returned by build_chatbot().
+
+    Returns:
+        A tuple (reply: str, history: list).
+    """
+    history = history + [{"role": "user", "content": user_input}]  # Build a new list rather than mutating the caller's
+
+    input_ids, history = build_prompt(history, tokenizer)  # Render to tokens, dropping old turns if over budget
 
     with torch.no_grad():                                # Disable gradient tracking — not needed for inference, saves memory
         output_ids = model.generate(
             input_ids,
-            attention_mask=attention_mask,               # Explicitly tell the model which tokens to attend to (all of them)
-            max_new_tokens=100,                          # Generate at most 100 new tokens so replies stay concise
-            pad_token_id=tokenizer.eos_token_id,         # Use EOS as the pad token ID
+            attention_mask=torch.ones_like(input_ids),   # All 1s = every token is real, none is padding
+            max_new_tokens=MAX_NEW_TOKENS,               # Cap the reply length
+            pad_token_id=tokenizer.pad_token_id,         # Qwen defines a real pad token, unlike GPT-2-based models
             do_sample=True,                              # Use sampling for more natural, varied replies
             temperature=0.7,                             # Lower = more focused; higher = more creative but less coherent
             top_p=0.9,                                   # Nucleus sampling: only consider tokens whose cumulative probability reaches 90%
@@ -164,13 +204,13 @@ def get_reply(user_input, history_ids, model, tokenizer):
 
     reply = tokenizer.decode(                            # Convert the newly generated token IDs back into a string
         output_ids[:, input_ids.shape[-1]:][0],          # Slice off the input prefix — we only want the new tokens
-        skip_special_tokens=True,                        # Remove EOS and other special tokens from the output string
+        skip_special_tokens=True,                        # Strip <|im_end|> and other special tokens from the output string
     ).strip()
 
-    if not reply:                                        # Guard against an empty reply (can happen on very short inputs)
-        reply = "I'm not sure how to respond to that."  # Fall back to a safe default so the conversation doesn't stall
+    if not reply:                                        # Guard against an empty reply
+        reply = "I'm not sure how to respond to that."   # Fall back to a safe default so the conversation doesn't stall
 
-    return reply, output_ids  # Return the reply and the full token history (input + reply) for the next turn
+    return reply, history + [{"role": "assistant", "content": reply}]  # Record the reply so the next turn has context
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +231,7 @@ def chat_loop(model, tokenizer, recognizer=None, mic=None, use_voice=True, tts_r
         tts_rate:    Words per minute for spoken replies.
         tts_volume:  Volume level from 0.0 (silent) to 1.0 (full) for spoken replies.
     """
-    history_ids = None  # No token history at the start; None signals the first turn to get_reply
+    history = []  # No conversation history at the start; an empty list means get_reply sends only the system prompt plus the first message
 
     print("Chat started. Say or type 'quit' to exit.\n")  # Tell the user how to stop
 
@@ -208,8 +248,9 @@ def chat_loop(model, tokenizer, recognizer=None, mic=None, use_voice=True, tts_r
             respond("Goodbye!", tts_rate, tts_volume)  # Speak and print the farewell
             break                                      # Exit the while loop and end the session
 
-        reply, history_ids = get_reply(user_input, history_ids, model, tokenizer)  # Generate the bot's response using DialoGPT
-        respond(reply, tts_rate, tts_volume)                                        # Speak and print the response
+        print("(thinking...)")                                                # Generation takes 10-15 s on a CPU; without this the terminal looks frozen
+        reply, history = get_reply(user_input, history, model, tokenizer)      # Generate the bot's response
+        respond(reply, tts_rate, tts_volume)                                   # Speak and print the response
 
 
 # ---------------------------------------------------------------------------
@@ -217,9 +258,9 @@ def chat_loop(model, tokenizer, recognizer=None, mic=None, use_voice=True, tts_r
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":  # Only run when this file is executed directly (not imported)
-    print("=== Chatbot Tutorial — Speech + DialoGPT ===\n")  # Print a title banner
+    print("=== Chatbot Tutorial — Speech + Qwen2.5 ===\n")  # Print a title banner
 
-    model, tokenizer = build_chatbot()  # Load DialoGPT model and its tokenizer
+    model, tokenizer = build_chatbot()  # Load the model and its tokenizer
 
     mode = input("Input mode — type 'v' for voice or 't' for text: ").strip().lower()  # Ask the user which input method to use
     use_voice = (mode == "v")  # True if the user chose voice, False for keyboard

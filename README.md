@@ -63,9 +63,9 @@ Converts written text into spoken audio using `pyttsx3`, which runs fully offlin
 ### 5. Chatbot
 **Files:** [chatbot.py](chatbot.py) · [CHATBOT.md](CHATBOT.md)
 
-Combines speech-to-text and text-to-speech with Microsoft's DialoGPT language model to build a fully conversational chatbot. Supports both voice and keyboard input. Responses are spoken aloud and printed to the terminal. Conversation history is managed as token ID tensors to stay within the model's context window.
+Combines speech-to-text and text-to-speech with the local **Qwen2.5-0.5B-Instruct** language model to build a fully conversational chatbot. Supports both voice and keyboard input. Responses are spoken aloud and printed to the terminal. Conversation history is kept as a list of role-tagged messages and rendered with `apply_chat_template`, trimmed by whole turns to fit the context budget, with a system prompt that pins the assistant's identity and keeps replies short enough to listen to.
 
-**Extra setup:** Python 3.12 required · first run downloads the DialoGPT-medium model (~863 MB)
+**Extra setup:** Python 3.12 required · first run downloads Qwen2.5-0.5B-Instruct (~1 GB, ungated — no HF login needed) · expect 10–15s per reply on CPU
 
 ---
 
