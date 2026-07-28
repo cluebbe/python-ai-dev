@@ -2,7 +2,7 @@
 
 A collection of hands-on Python tutorials covering the fundamentals of the language, object-oriented programming, speech I/O, and AI-powered applications using Claude.
 
-Each tutorial comes as a pair: a runnable `.py` file you can execute and experiment with, and a `.md` workshop file with step-by-step tasks and collapsible solutions.
+Each tutorial comes as a pair: a runnable `.py` file you can execute and experiment with, and a `.md` workshop file with step-by-step tasks and collapsible solutions. The web chatbot spans several files, so it lives in its own [`web_chatbot/`](web_chatbot) folder.
 
 ---
 
@@ -69,7 +69,24 @@ Combines speech-to-text and text-to-speech with Microsoft's DialoGPT language mo
 
 ---
 
-### 6. AI Code Generation
+### 6. Web Chatbot
+**Folder:** [web_chatbot/](web_chatbot) — [WEB_CHATBOT.md](web_chatbot/WEB_CHATBOT.md) · [chatbot_engine.py](web_chatbot/chatbot_engine.py) · [app.py](web_chatbot/app.py) · [templates/index.html](web_chatbot/templates/index.html)
+
+Puts the DialoGPT chatbot behind a Flask web server with a browser frontend. The code is split along a one-way dependency: `chatbot_engine.py` holds the model, conversation history and generation and never imports Flask, while `app.py` holds routes, session cookies and validation and never imports torch. The engine runs standalone as a terminal chat (`python chatbot_engine.py`), which doubles as the fastest way to tell a model bug from a web bug.
+
+Covers loading the model once at startup, per-visitor history keyed by a signed session cookie, a threading lock around the read-generate-store cycle, and proper HTTP status codes for every error path. Includes a full section on running and debugging while developing — Flask's request log, interactive tracebacks, `curl` with cookie jars, browser DevTools, and a table of common failures.
+
+```bash
+cd web_chatbot
+python app.py            # web server at http://127.0.0.1:5000
+python chatbot_engine.py # same engine, terminal only
+```
+
+**Extra setup:** Python 3.12 required · first run downloads the DialoGPT-medium model (~863 MB) · on macOS, AirPlay Receiver may occupy port 5000 — use `PORT=5001 python app.py`
+
+---
+
+### 7. AI Code Generation
 **Files:** [code_generation.py](code_generation.py) · [CODE_GENERATION.md](CODE_GENERATION.md)
 
 Uses the Anthropic Python SDK to call Claude (claude-opus-4-8) for AI-powered code generation. Demonstrates generating functions and classes from descriptions, streaming long outputs, producing code alongside unit tests, refactoring messy code, explaining complex snippets, and building a multi-turn interactive coding assistant. Includes prompt caching to reduce API costs.
@@ -87,7 +104,8 @@ All Python packages are pinned in [requirements.txt](requirements.txt). Key pack
 | `SpeechRecognition` | Speech to Text, Chatbot |
 | `PyAudio` | Speech to Text, Chatbot |
 | `pyttsx3` | Text to Speech, Chatbot |
-| `torch==2.2.2` | Chatbot |
-| `transformers==4.38.0` | Chatbot |
-| `numpy==1.26.4` | Chatbot (pinned below 2.0 for torch compatibility) |
+| `torch==2.2.2` | Chatbot, Web Chatbot |
+| `transformers==4.38.0` | Chatbot, Web Chatbot |
+| `numpy==1.26.4` | Chatbot, Web Chatbot (pinned below 2.0 for torch compatibility) |
+| `Flask==3.1.3` | Web Chatbot |
 | `anthropic` | AI Code Generation |
