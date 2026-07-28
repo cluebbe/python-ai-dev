@@ -98,7 +98,7 @@ def reset():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":  # Only run when this file is executed directly (not imported by a production server)
-    print("=== Web Chatbot Tutorial — Flask + DialoGPT ===\n")  # Print a title banner
+    print(f"=== Web Chatbot Tutorial — Flask + {engine.model_name} ===\n")  # Derived from the engine so it never goes stale on a model swap
 
     engine.load()  # Load the model before accepting any requests, so the first visitor does not wait
     print("Open http://127.0.0.1:5000 in your browser.\n")  # Point the user at the UI

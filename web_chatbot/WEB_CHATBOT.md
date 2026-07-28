@@ -1,4 +1,4 @@
-# Workshop: Web Chatbot with Flask and DialoGPT
+# Workshop: Web Chatbot with Flask and Qwen2.5
 
 ---
 
@@ -11,9 +11,19 @@ the end you will have a Flask server that loads a language model once at
 startup, exposes a small JSON API, and serves a browser page that talks to it —
 with each visitor getting their own private conversation.
 
-The language model is **DialoGPT-medium** by Microsoft, a GPT-2-based model
-fine-tuned on conversational data. It runs locally via the Hugging Face
-`transformers` library. No cloud API or account is required.
+The language model is **Qwen2.5-0.5B-Instruct**, a small instruction-tuned model
+that runs locally via the Hugging Face `transformers` library. It is Apache-2.0
+licensed and ungated, so no cloud API, account, or access token is required —
+unlike Llama, which needs a Hugging Face login and a signed license before it
+will download.
+
+> **Why an instruction-tuned model?** An obvious alternative is DialoGPT, an
+> older GPT-2-based model fine-tuned on Reddit threads. It is smaller and
+> faster, but it was trained only to produce a *plausible next reply*, never to
+> answer questions or stay consistent. Asked "are you a girl or a guy" it will
+> happily say "Girl" and then "I am a guy" two turns later, and asked "what is a
+> president" it answers "I am a woman". Instruction tuning is what fixes that,
+> and it costs roughly 2.5x in generation time on CPU.
 
 The workshop is self-contained: every piece of model code you need is spelled
 out here, so you can follow it without having done the terminal chatbot first.
@@ -29,6 +39,12 @@ Four assumptions break, and much of this workshop is about the four fixes:
 | One thing happens at a time | The dev server runs threads in parallel | Serialise with a lock (Task 3) |
 | Code runs top to bottom | Requests arrive in any order | Load the model once, up front (Task 1) |
 | A crash is visible in the console | A crash is a blank page for the user | Return JSON errors with status codes (Task 8) |
+
+There is a fifth difference that is not about correctness but about feel: on a
+CPU this model takes **10–15 seconds** to answer. A terminal user watching a
+cursor accepts that; a browser user staring at a frozen page assumes it broke.
+Task 10 addresses it with an immediate placeholder bubble and a disabled Send
+button, and the streaming exercise at the end addresses it properly.
 
 ### Why Two Modules Instead of One?
 
@@ -59,7 +75,7 @@ the engine knows nothing about the web.** Concretely, that buys you four things:
    there, it is the engine. If not, it is the web layer.
 3. **The engine is unit-testable.** Testing `engine.reply("test-1", "hi")`
    needs no Flask test client and no request context.
-4. **Both files stay small enough to hold in your head.** Roughly 190 and 110
+4. **Both files stay small enough to hold in your head.** Roughly 230 and 110
    lines, each about one topic.
 
 The boundary between them is a single idea: the engine identifies conversations
@@ -106,7 +122,7 @@ to the file that created the app.
 
 **1. Create and activate a virtual environment with Python 3.12**
 
-> DialoGPT requires `torch`, which does not yet support Python 3.13+.
+> This project requires `torch`, which does not yet support Python 3.13+.
 > Use Python 3.12 to avoid compatibility issues.
 
 ```bash
@@ -131,8 +147,8 @@ Or install everything pinned for this repository at once:
 pip install -r requirements.txt
 ```
 
-> The first run will download the DialoGPT-medium model (~863 MB). This only
-> happens once — it is cached locally in `~/.cache/huggingface/` afterwards.
+> The first run will download Qwen2.5-0.5B-Instruct (~1 GB). This only happens
+> once — it is cached locally in `~/.cache/huggingface/` afterwards.
 
 **3. Verify the installation**
 
@@ -159,24 +175,35 @@ configuration but does **not** load the model; a separate `load()` method does
 that. Add an `is_ready` property so callers can tell whether loading has
 finished.
 
+Also define a system prompt that pins the assistant's identity.
+
 <details>
 <summary>Solution</summary>
 
 ```python
 import logging
 import threading
+import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
-DEFAULT_MODEL_NAME = "microsoft/DialoGPT-medium"
+DEFAULT_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a friendly, concise chat assistant running locally on the Qwen2.5 model. "
+    "If you are asked your name, say you are a Qwen2.5 assistant. "
+    "Keep replies to one or two sentences."
+)
 
 
 class ChatbotEngine:
-    def __init__(self, model_name=DEFAULT_MODEL_NAME, max_history_tokens=512,
-                 max_new_tokens=100, temperature=0.7, top_p=0.9):
+    def __init__(self, model_name=DEFAULT_MODEL_NAME, system_prompt=DEFAULT_SYSTEM_PROMPT,
+                 max_context_tokens=1024, max_new_tokens=128,
+                 temperature=0.7, top_p=0.9):
         self.model_name = model_name
-        self.max_history_tokens = max_history_tokens
+        self.system_prompt = system_prompt
+        self.max_context_tokens = max_context_tokens
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
         self.top_p = top_p
@@ -187,10 +214,12 @@ class ChatbotEngine:
         self._lock = threading.Lock()
 
     def load(self):
-        print(f"Loading {self.model_name} (downloads ~863 MB on first run)...")
+        print(f"Loading {self.model_name} (downloads ~1 GB on first run)...")
         self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self._tokenizer.pad_token = self._tokenizer.eos_token
-        self._model = AutoModelForCausalLM.from_pretrained(self.model_name)
+        self._model = AutoModelForCausalLM.from_pretrained(
+            self.model_name,
+            torch_dtype=torch.float32,
+        )
         self._model.eval()
         print("Model ready.")
 
@@ -213,12 +242,25 @@ class ChatbotEngine:
 - **`load()` is separate from `__init__()`** so constructing an engine is
   instant. `app.py` builds the engine at import time and chooses when to pay the
   loading cost. It also means importing the module for a test does not download
-  863 MB.
+  a gigabyte.
 - **Load once, at startup.** Loading inside a request handler would re-read the
   model on every message — tens of seconds per reply, and several copies in RAM.
-- `self._tokenizer.pad_token = self._tokenizer.eos_token` is required because
-  DialoGPT has no pad token defined; without it padding falls back to an
-  incorrect default.
+- **`torch_dtype=torch.float32` is a deliberate choice, not a default.** The
+  obvious move on a memory-constrained machine is `bfloat16`, which halves the
+  weights to ~1 GB. But CPUs without native bf16 support emulate it, and
+  measured on a 1.1 GHz Intel i5 float32 ran **~11% faster** (3.34 vs 3.01
+  tokens/sec). At 0.5B parameters float32 is only ~2 GB, so the memory saving
+  buys nothing. Bigger models flip this trade-off: at 1.5B, bfloat16 becomes
+  necessary to fit at all.
+- **The system prompt pins the identity for a real reason.** Asked "what is your
+  name", the bare model confidently answers *"I am Claude, created by
+  Anthropic"* — a hallucination absorbed from assistant transcripts in its
+  training data. Smaller models are more prone to this. Stating what it actually
+  is corrects it.
+- The system prompt is **not** stored in the history. It is re-added on every
+  request (Task 2), so trimming old turns can never silently discard it.
+- No `pad_token` assignment is needed — Qwen defines a real pad token, unlike
+  GPT-2-based models where you must borrow the EOS token.
 - `self._model.eval()` disables dropout layers, which are only needed during
   training — inference is faster and deterministic without them.
 - The leading underscore on `_model`, `_tokenizer`, `_histories` and `_lock`
@@ -231,46 +273,49 @@ class ChatbotEngine:
 
 ---
 
-## Task 2 — Generating a Reply
+## Task 2 — Building the Prompt and Generating
 
-Add a private method `_generate(self, message, history_ids)` that:
+Instruction-tuned models do not take raw concatenated text. They expect a
+**list of messages with roles**, rendered into the exact control tokens the
+model was trained on. Getting that formatting right is what separates coherent
+replies from garbage.
 
-1. Encodes `message` (plus the EOS token) into a tensor of token IDs.
-2. Concatenates it with `history_ids` from previous turns (`None` on the first turn).
-3. Trims the combined input to the most recent `max_history_tokens` tokens.
-4. Generates a reply, passing an explicit all-ones attention mask.
-5. Decodes only the newly generated tokens and returns `(reply, output_ids)`.
-6. Falls back to a safe default string if the model returns an empty reply.
+Write two private methods:
+
+- `_build_prompt(self, history)` — prepend the system prompt, render the
+  messages with `apply_chat_template`, and drop the oldest turns until the
+  result fits `max_context_tokens`. Return `(input_ids, history)`.
+- `_generate(self, input_ids)` — generate, decode only the new tokens, and fall
+  back to a safe default if the reply is empty.
 
 <details>
 <summary>Solution</summary>
 
 ```python
-import torch
+    def _build_prompt(self, history):
+        while True:
+            messages = [{"role": "system", "content": self.system_prompt}] + history
 
-    def _generate(self, message, history_ids):
-        new_ids = self._tokenizer.encode(
-            message + self._tokenizer.eos_token,
-            return_tensors="pt",
-        )
+            input_ids = self._tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                return_tensors="pt",
+            )
 
-        input_ids = (
-            torch.cat([history_ids, new_ids], dim=-1)
-            if history_ids is not None
-            else new_ids
-        )
+            if input_ids.shape[-1] <= self.max_context_tokens:
+                return input_ids, history
+            if len(history) <= 1:
+                return input_ids, history
 
-        if input_ids.shape[-1] > self.max_history_tokens:
-            input_ids = input_ids[:, -self.max_history_tokens:]
+            history = history[2:]   # drop the oldest user+assistant pair
 
-        attention_mask = torch.ones_like(input_ids)
-
+    def _generate(self, input_ids):
         with torch.no_grad():
             output_ids = self._model.generate(
                 input_ids,
-                attention_mask=attention_mask,
+                attention_mask=torch.ones_like(input_ids),
                 max_new_tokens=self.max_new_tokens,
-                pad_token_id=self._tokenizer.eos_token_id,
+                pad_token_id=self._tokenizer.pad_token_id,
                 do_sample=True,
                 temperature=self.temperature,
                 top_p=self.top_p,
@@ -284,24 +329,41 @@ import torch
         if not reply:
             reply = "I'm not sure how to respond to that."
 
-        return reply, output_ids
+        return reply
 ```
 
 **Key points:**
-- History is stored as a **token ID tensor**, not a list of strings — this is
-  the native format DialoGPT was designed for and produces coherent results.
-- `max_history_tokens = 512` prevents the context from overflowing DialoGPT's
-  1024-token limit; without this the model deteriorates after a few exchanges.
+- **History is a list of `{"role", "content"}` dicts**, not a token tensor. The
+  roles are what let the model tell your words from its own — which is exactly
+  what an older non-instruct model lacks, and why it contradicts itself about
+  who it is.
+- **`apply_chat_template` writes the control tokens for you.** Qwen expects
+  turns wrapped as `<|im_start|>user … <|im_end|>`. Every model family uses a
+  different scheme, and the template ships with the tokenizer, so this one call
+  stays correct across model swaps. Hand-formatting this string is the single
+  most common cause of garbled output.
+- **`add_generation_prompt=True` is essential.** It appends the opening of the
+  assistant's turn, so the model continues *as the assistant*. Omit it and the
+  model often invents the user's next line instead of replying.
+- **Trimming drops whole turns, not tokens.** Cutting a token tensor at a fixed
+  length — the natural approach without roles — can slice through the middle of
+  a message and leave a dangling half-turn the model has to interpret. Removing
+  `history[:2]` (one user + assistant pair) always leaves valid structure.
+- The system prompt is prepended **inside the loop**, so it is never part of
+  what gets trimmed. Store it in the history instead and a long conversation
+  would eventually delete the assistant's own instructions.
+- `len(history) <= 1` stops the loop when only the current user message remains.
+  Without that guard, a single oversized message would loop forever.
 - `torch.no_grad()` disables gradient computation during inference, saving
   memory and speeding up generation.
 - `output_ids[:, input_ids.shape[-1]:]` slices off the input prefix, leaving
   only the newly generated reply tokens.
-- `_generate` is **pure with respect to the history**: it takes history in and
-  returns new history out, touching `self._histories` not at all. That keeps all
-  the state mutation in one place — `reply()`, in the next task — which is what
-  makes the locking there easy to reason about.
-- Sampling settings come from `self`, so a caller can build
-  `ChatbotEngine(temperature=1.2)` without editing this method.
+- `max_new_tokens` is a **ceiling, not a target**. Generation stops at the
+  end-of-turn token, usually well short of it, so a generous cap costs nothing
+  on normal replies and only bounds a runaway one.
+- Neither method touches `self._histories`. All state mutation lives in
+  `reply()` in the next task, which is what makes the locking there easy to
+  reason about.
 
 </details>
 
@@ -313,7 +375,7 @@ Add the public `reply(self, conversation_id, message)` and
 `reset(self, conversation_id)` methods.
 
 `reply()` looks up that conversation's history, generates, stores the updated
-history, and returns `(reply, history_tokens)`. Both methods must be safe to
+history, and returns `(reply, context_tokens)`. Both methods must be safe to
 call from several threads at once, because the Flask development server handles
 requests in parallel.
 
@@ -326,10 +388,15 @@ requests in parallel.
             raise RuntimeError("Model is not loaded yet — call load() first.")
 
         with self._lock:
-            history_ids = self._histories.get(conversation_id)
-            reply, history_ids = self._generate(message, history_ids)
-            self._histories[conversation_id] = history_ids
-            return reply, history_ids.shape[-1]
+            history = self._histories.get(conversation_id, [])
+            history = history + [{"role": "user", "content": message}]
+
+            input_ids, history = self._build_prompt(history)
+            reply = self._generate(input_ids)
+
+            history = history + [{"role": "assistant", "content": reply}]
+            self._histories[conversation_id] = history
+            return reply, input_ids.shape[-1]
 
     def reset(self, conversation_id):
         with self._lock:
@@ -355,10 +422,16 @@ arriving after the first finishes.
 - `with self._lock:` releases the lock on exit **including when an exception is
   raised**. Manual `acquire()`/`release()` leaks the lock on error and deadlocks
   the whole server.
-- `_generate()` must **not** take the lock — `reply()` already holds it, and
-  `threading.Lock` is not reentrant, so acquiring it twice in one thread
-  deadlocks instantly. This is why `_generate`'s docstring records who is
+- `_build_prompt()` and `_generate()` must **not** take the lock — `reply()`
+  already holds it, and `threading.Lock` is not reentrant, so acquiring it twice
+  in one thread deadlocks instantly. This is why their docstrings record who is
   responsible for locking.
+- `history + [...]` builds a **new list** rather than calling `.append()` on the
+  stored one. If generation raises, the stored history is left untouched instead
+  of holding a user message that never got a reply.
+- `_build_prompt()` returns the possibly-trimmed history, and that trimmed
+  version is what gets stored — so the trimming is permanent rather than
+  recomputed from an ever-growing list on every turn.
 - Raising `RuntimeError` when the model is missing gives the caller something
   clear to catch, rather than an `AttributeError` on `None` from deep inside.
 - `dict.pop(key, None)` removes the entry if present and does nothing
@@ -412,15 +485,24 @@ python chatbot_engine.py
 ```
 === Chatbot Engine — terminal demo ===
 
-Loading microsoft/DialoGPT-medium (downloads ~863 MB on first run)...
+Loading Qwen/Qwen2.5-0.5B-Instruct (downloads ~1 GB on first run)...
 Model ready.
 
 Chat started. Type 'quit' to exit.
 
-You: my name is Sam
+You: are you a girl or a guy
 
-Bot: Hi Sam!   [11 tokens of context]
+Bot: As an artificial intelligence designed by Alibaba Cloud, I do not have
+gender. My purpose is to provide assistance and answer questions in natural
+language.   [119 tokens of context]
+
+You: What is a president
+
+Bot: A president is the head of state and government of a country, usually
+elected by the people through democratic processes.   [185 tokens of context]
 ```
+
+Expect roughly **10–15 seconds per reply** on a modest CPU.
 
 **Key points:**
 - `if __name__ == "__main__":` runs only when the file is executed directly. When
@@ -526,7 +608,7 @@ app = Flask(__name__)
 engine = ChatbotEngine()
 
 if __name__ == "__main__":
-    print("=== Web Chatbot Tutorial — Flask + DialoGPT ===\n")
+    print(f"=== Web Chatbot Tutorial — Flask + {engine.model_name} ===\n")
     engine.load()
     print("Open http://127.0.0.1:5000 in your browser.\n")
     app.run(
@@ -548,8 +630,8 @@ if __name__ == "__main__":
   loads nothing (Task 1). One shared instance is what lets every request see the
   same model and the same conversations.
 - `engine.load()` sits in `__main__`, **not** at module level, so importing
-  `app.py` — for a test, or by a WSGI server — does not trigger an 863 MB load
-  as a side effect.
+  `app.py` — for a test, or by a WSGI server — does not download and load a
+  gigabyte of weights as a side effect.
 - **`use_reloader=False` is the important flag.** In debug mode Flask normally
   watches your files and restarts on every save. That would re-run `load()`, so a
   one-character typo fix costs a full model reload. Worse, the reloader runs your
@@ -609,11 +691,13 @@ def get_conversation_id():
 
 **Key points:**
 - **Why not put the history in the session itself?** Flask's session is a
-  cookie. Cookies are capped at about 4 KB by browsers, and a 512-token tensor
-  serialises to far more than that — and cookies only hold JSON-friendly types
-  anyway. So the cookie holds a short **ID**, and the bulky tensor stays on the
-  server, inside the engine. This ID-in-cookie, data-on-server split is how
-  server-side sessions work in general.
+  cookie, and browsers cap cookies at about 4 KB. A message list happens to be
+  JSON-friendly, so it would *technically* fit at first — and then silently stop
+  fitting a few turns in, because our context budget alone allows 1024 tokens of
+  conversation. Worse, the client could edit its own history and put words in
+  the assistant's mouth. So the cookie holds a short **ID**, and the transcript
+  stays on the server inside the engine. This ID-in-cookie, data-on-server split
+  is how server-side sessions work in general.
 - **This function is the entire boundary between web and engine.** It is the
   only place that knows a conversation ID comes from a cookie. Swap cookies for
   an API key or a JWT and this one function changes; `chatbot_engine.py` does
@@ -679,7 +763,7 @@ Test it without a browser:
 curl -X POST http://127.0.0.1:5000/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "Hello there"}'
-# {"history_tokens":7,"reply":"General Kenobi!"}
+# {"history_tokens":38,"reply":"Hello! How can I assist you today?"}
 ```
 
 **Key points:**
@@ -707,7 +791,7 @@ curl -X POST http://127.0.0.1:5000/chat \
 - Catching bare `Exception` around the engine call is deliberate: model failures
   are varied and hard to enumerate, and one bad request should not take out the
   endpoint for everyone else.
-- Returning `history_tokens` is not decoration — it makes the 512-token trimming
+- Returning `history_tokens` is not decoration — it makes the context trimming
   from Task 2 visible in the UI, so you can watch the context fill up.
 
 </details>
@@ -878,9 +962,9 @@ python app.py
 ```
 
 ```
-=== Web Chatbot Tutorial — Flask + DialoGPT ===
+=== Web Chatbot Tutorial — Flask + Qwen/Qwen2.5-0.5B-Instruct ===
 
-Loading microsoft/DialoGPT-medium (downloads ~863 MB on first run)...
+Loading Qwen/Qwen2.5-0.5B-Instruct (downloads ~1 GB on first run)...
 Model ready.
 Open http://127.0.0.1:5000 in your browser.
 
@@ -1027,7 +1111,10 @@ working.
 | `415 Unsupported Media Type` | `Content-Type: application/json` header missing on the request | Add the header in `fetch`/`curl` |
 | Bot forgets everything each message | Cookies not returned (plain `curl`, or a private-window quirk) | Use `curl -c/-b`; check Application → Cookies |
 | Bot remembers things you never said | You are reusing an old session ID | Click Reset, or `POST /reset` |
-| Replies are slow and get slower | Normal — CPU generation, and the context grows each turn | Watch the token counter; lower `max_new_tokens` |
+| Replies take 10–15s | Normal — CPU generation of a 0.5B model | Lower `max_new_tokens`, or add streaming (exercise 2) so first words appear in ~2s |
+| Replies get slower over a long chat | Normal — the prompt grows every turn, so there is more to process | Watch the token counter climb; lower `max_context_tokens` |
+| Bot claims to be "Claude, created by Anthropic" | Identity hallucinated from training data | Pin the name in `system_prompt` (Task 1) |
+| Replies are garbled, or the bot writes your next line for you | Prompt not rendered with the model's template | Use `apply_chat_template` with `add_generation_prompt=True` — never hand-format the turns |
 | The page reloads when you press Send | `event.preventDefault()` missing | Add it as the first line of the submit handler |
 | Styling changes have no effect | Browser cached the page | Hard-refresh (`Cmd/Ctrl+Shift+R`) |
 
@@ -1043,7 +1130,7 @@ working.
    Flask streaming response to show tokens as they are generated. Note which
    file each change belongs in.
 3. **Show the token budget.** The frontend already receives `history_tokens`.
-   Turn it into a progress bar against `max_history_tokens`.
+   Turn it into a progress bar against `max_context_tokens`.
 4. **Add temperature control.** Send a slider value with each message and pass
    it through to the engine. Validate the range in `app.py` — never trust a
    number from a browser — and decide whether it belongs on the constructor or
