@@ -914,7 +914,14 @@ from flask import render_template
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", model_name=engine.model_name)
+```
+
+In the template, render it with a Jinja placeholder:
+
+```html
+<h1>Local Web Chatbot</h1>
+<span id="model">{{ model_name }}</span>
 ```
 
 **Key points:**
@@ -922,6 +929,12 @@ def index():
   that created the app. `jinja2.exceptions.TemplateNotFound` means the folder is
   missing, misspelled, or not next to `app.py` — Flask does not search your
   current working directory.
+- **Keyword arguments to `render_template` become variables in the template**,
+  read with `{{ model_name }}`. Passing the name in rather than hardcoding it is
+  worth the extra argument: hardcoded model names in the UI are exactly the kind
+  of thing that silently goes stale after a model swap, since nothing breaks and
+  no test fails — the page just quietly lies. Deriving it from the engine means
+  the page cannot disagree with what is actually loaded.
 - With `debug=True`, Flask re-reads the template on **every request**. Edit
   `index.html`, hit refresh, no restart — which matters because restarting means
   reloading the model.

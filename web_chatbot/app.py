@@ -47,7 +47,10 @@ def get_conversation_id():
 @app.get("/")
 def index():
     """Serve the chat page."""
-    return render_template("index.html")  # Flask looks for templates/index.html next to this file
+    return render_template(                 # Flask looks for templates/index.html next to this file
+        "index.html",
+        model_name=engine.model_name,       # Passed into the template so the page never hardcodes a model name that can go stale
+    )
 
 
 @app.get("/health")

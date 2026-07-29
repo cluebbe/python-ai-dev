@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DialoGPT Web Chatbot</title>
+  <title>Local Web Chatbot</title>
   <style>
     /* Everything is inline so the page needs no CDN and no static/ folder. */
     :root {
@@ -43,9 +43,10 @@
 
     .app { width: 100%; max-width: 640px; }
 
-    header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .75rem; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
     h1 { font-size: 1.25rem; margin: 0; }
-    #status { font-size: .8rem; color: var(--muted); }
+    #model { font-size: .75rem; color: var(--muted); }
+    #status { font-size: .8rem; color: var(--muted); white-space: nowrap; }
 
     /* The transcript scrolls on its own so the input box never leaves the screen. */
     #transcript {
@@ -102,7 +103,12 @@
 <body>
   <div class="app">
     <header>
-      <h1>DialoGPT Web Chatbot</h1>
+      <div>
+        <h1>Local Web Chatbot</h1>
+        <!-- Filled in by Flask from engine.model_name, so swapping the model
+             updates the page automatically instead of leaving a stale name. -->
+        <span id="model">{{ model_name }}</span>
+      </div>
       <span id="status">ready</span>
     </header>
 
