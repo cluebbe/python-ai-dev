@@ -1,8 +1,10 @@
 # Python AI Development Workshops
 
-A collection of hands-on Python tutorials covering the fundamentals of the language, object-oriented programming, speech I/O, and AI-powered applications using Claude.
+A collection of hands-on Python tutorials covering speech I/O, local language models, and AI-powered applications using Claude.
 
 Each tutorial comes as a pair: a runnable `.py` file you can execute and experiment with, and a `.md` workshop file with step-by-step tasks and collapsible solutions. The web chatbot spans several files, so it lives in its own [`web_chatbot/`](web_chatbot) folder.
+
+**New to Python?** Start with the beginner workshops in [cluebbe/python](https://github.com/cluebbe/python) — Python basics and object-oriented programming, no dependencies required. They used to live here, and the tutorials below assume you are comfortable with that material.
 
 ---
 
@@ -30,21 +32,7 @@ export ANTHROPIC_API_KEY=your-key-here
 
 ## Tutorials
 
-### 1. Python Basics
-**Files:** [python_basics.py](python_basics.py) · [PYTHON_BASICS.md](PYTHON_BASICS.md)
-
-Introduces the core building blocks of Python for complete beginners. Covers variables and data types, string formatting with f-strings, user input, conditionals, lists, loops, dictionaries, and functions — ending with a small interactive program that uses all of them together.
-
----
-
-### 2. Object-Oriented Programming
-**Files:** [oop_basics.py](oop_basics.py) · [OOP_BASICS.md](OOP_BASICS.md)
-
-Teaches the four pillars of OOP in Python: classes, objects, inheritance, and encapsulation. Walks through creating a class with `__init__` and instance methods, readable `__str__` output, inheriting from a parent class, and using `super()` to extend it — all illustrated with a practical library system example.
-
----
-
-### 3. Speech to Text
+### 1. Speech to Text
 **Files:** [speech_to_text.py](speech_to_text.py) · [SPEECH_TO_TEXT.md](SPEECH_TO_TEXT.md)
 
 Captures live microphone audio and transcribes it using Google's free Web Speech API via the `SpeechRecognition` library. Demonstrates single-shot transcription, ambient noise calibration, continuous listening with a timeout, and proper error handling for unintelligible audio and network failures.
@@ -53,14 +41,14 @@ Captures live microphone audio and transcribes it using Google's free Web Speech
 
 ---
 
-### 4. Text to Speech
+### 2. Text to Speech
 **Files:** [text_to_speech.py](text_to_speech.py) · [TEXT_TO_SPEECH.md](TEXT_TO_SPEECH.md)
 
 Converts written text into spoken audio using `pyttsx3`, which runs fully offline with no API key. Covers listing available voices, speaking a single phrase, and running a continuous type-and-speak loop — with control over speaking rate and volume.
 
 ---
 
-### 5. Chatbot
+### 3. Chatbot
 **Files:** [chatbot.py](chatbot.py) · [CHATBOT.md](CHATBOT.md)
 
 Combines speech-to-text and text-to-speech with the local **Qwen2.5-0.5B-Instruct** language model to build a fully conversational chatbot. Supports both voice and keyboard input. Responses are spoken aloud and printed to the terminal. Conversation history is kept as a list of role-tagged messages and rendered with `apply_chat_template`, trimmed by whole turns to fit the context budget, with a system prompt that pins the assistant's identity and keeps replies short enough to listen to.
@@ -69,7 +57,7 @@ Combines speech-to-text and text-to-speech with the local **Qwen2.5-0.5B-Instruc
 
 ---
 
-### 6. Web Chatbot
+### 4. Web Chatbot
 **Folder:** [web_chatbot/](web_chatbot) — [WEB_CHATBOT.md](web_chatbot/WEB_CHATBOT.md) · [chatbot_engine.py](web_chatbot/chatbot_engine.py) · [app.py](web_chatbot/app.py) · [templates/index.html](web_chatbot/templates/index.html)
 
 Puts a local **Qwen2.5-0.5B-Instruct** chatbot behind a Flask web server with a browser frontend. The code is split along a one-way dependency: `chatbot_engine.py` holds the model, conversation history and generation and never imports Flask, while `app.py` holds routes, session cookies and validation and never imports torch. The engine runs standalone as a terminal chat (`python chatbot_engine.py`), which doubles as the fastest way to tell a model bug from a web bug.
@@ -86,7 +74,7 @@ python chatbot_engine.py # same engine, terminal only
 
 ---
 
-### 7. AI Code Generation
+### 5. AI Code Generation
 **Files:** [code_generation.py](code_generation.py) · [CODE_GENERATION.md](CODE_GENERATION.md)
 
 Uses the Anthropic Python SDK to call Claude (claude-opus-4-8) for AI-powered code generation. Demonstrates generating functions and classes from descriptions, streaming long outputs, producing code alongside unit tests, refactoring messy code, explaining complex snippets, and building a multi-turn interactive coding assistant. Includes prompt caching to reduce API costs.
