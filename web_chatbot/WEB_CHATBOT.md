@@ -166,6 +166,15 @@ print(transformers.__version__)   # should print 4.38.0
 Build the chatbot first, with no web server anywhere. You will be able to talk
 to it in the terminal before Flask appears at all.
 
+Each of Tasks 1–3 ends with a **checkpoint**: a small
+`if __name__ == "__main__":` block that exercises exactly what you just wrote,
+so no task leaves you with untested code. Each checkpoint *replaces* the
+previous one — they are scaffolding, not features — and Task 4 replaces the last
+of them with the real terminal demo that stays in the file.
+
+> The first checkpoint downloads the model (~1 GB). Every run after that loads
+> from the local cache in a few seconds.
+
 ---
 
 ## Task 1 — The Engine Class and Loading
@@ -314,6 +323,32 @@ class ChatbotEngine:
 
 </details>
 
+### Checkpoint — run it
+
+Add this at the bottom of the file and run `python chatbot_engine.py`. There is
+nothing to chat with yet; the point is to prove the model loads and the
+properties report the truth before and after.
+
+```python
+if __name__ == "__main__":
+    engine = ChatbotEngine()
+    print("is_ready before load:", engine.is_ready)   # False — construction is instant
+    engine.load()
+    print("is_ready after load: ", engine.is_ready)   # True
+    print("conversations:       ", engine.active_conversations)  # 0
+```
+
+```
+is_ready before load: False
+Loading Qwen/Qwen2.5-0.5B-Instruct (downloads ~1 GB on first run)...
+Model ready.
+is_ready after load:  True
+conversations:        0
+```
+
+If `is_ready` is `True` on the first line, you loaded the model in `__init__()`
+instead of in `load()`.
+
 ---
 
 ## Task 2 — Building the Prompt and Generating
@@ -410,6 +445,54 @@ Write two private methods:
 
 </details>
 
+### Checkpoint — run it
+
+**Replace** the Task 1 checkpoint with this one. `reply()` does not exist yet,
+so call the two private methods directly — the one time it is reasonable to
+reach past an underscore is when you wrote the class and are testing it.
+
+```python
+if __name__ == "__main__":
+    engine = ChatbotEngine()
+    engine.load()
+
+    history = [{"role": "user", "content": "Hello! Who are you?"}]
+    input_ids, history = engine._build_prompt(history)
+
+    print("--- rendered prompt ---")
+    print(engine._tokenizer.decode(input_ids[0]))   # see the control tokens
+    print(f"--- {input_ids.shape[-1]} tokens ---\n")
+
+    print("Bot:", engine._generate(input_ids))
+```
+
+```
+--- rendered prompt ---
+<|im_start|>system
+You are a friendly, concise chat assistant running locally on the Qwen2.5 model. ...<|im_end|>
+<|im_start|>user
+Hello! Who are you?<|im_end|>
+<|im_start|>assistant
+
+--- 64 tokens ---
+
+Bot: I am Qwen2.5, a large language model created by Alibaba Cloud. I'm here to
+assist with various tasks and answer questions in natural language.
+```
+
+Decoding the prompt back into text is worth doing once: those `<|im_start|>`
+markers are what `apply_chat_template` added for you, and the trailing
+`<|im_start|>assistant` with nothing after it is `add_generation_prompt=True`
+handing the model its cue. Delete that argument and re-run to see the model
+write the user's next line instead of replying.
+
+To check the trimming loop without holding a long conversation, construct a
+second engine with a tiny budget — `ChatbotEngine(max_context_tokens=80)` — hand
+it the same tokenizer (`small._tokenizer = engine._tokenizer`, no second model
+load needed) and pass it a made-up history of four user+assistant pairs.
+`_build_prompt` should hand back a much shorter history — two messages, ~79
+tokens — with the system prompt still at the front.
+
 ---
 
 ## Task 3 — Conversations and Thread Safety
@@ -485,15 +568,70 @@ arriving after the first finishes.
 
 </details>
 
+### Checkpoint — run it
+
+**Replace** the Task 2 checkpoint. The engine is now feature-complete, so this
+one uses only the public API: does a conversation remember, do two IDs stay
+apart, does `reset()` forget?
+
+```python
+if __name__ == "__main__":
+    engine = ChatbotEngine()
+    engine.load()
+
+    reply, tokens = engine.reply("alice", "My name is Alice. Please remember it.")
+    print(f"alice: {reply}   [{tokens} tokens]")
+
+    reply, tokens = engine.reply("alice", "What is my name?")
+    print(f"alice: {reply}   [{tokens} tokens]")        # should say Alice
+
+    reply, _ = engine.reply("bob", "What is my name?")
+    print(f"bob:   {reply}")                            # a separate conversation — cannot know
+    print("conversations:", engine.active_conversations)  # 2
+
+    engine.reset("alice")
+    reply, _ = engine.reply("alice", "What is my name?")
+    print(f"alice: {reply}")                            # forgotten again
+```
+
+```
+alice: Alice is my local name and I'm just a virtual assistant running this
+software.   [67 tokens]
+alice: Your name is Alice.   [98 tokens]
+bob:   My name is Qwen2.5.
+conversations: 2
+alice: My name is Qwen2.5.
+```
+
+Three things to look for, in order of what they tell you:
+
+1. **The second `alice` line says "Alice".** History is being stored and fed
+   back. If it does not, `reply()` is not saving to `self._histories`.
+2. **The token count grows** between the first and second call. That is the
+   history accumulating in the prompt.
+3. **`bob` cannot name Alice, and after the reset neither can `alice`.**
+   Conversations are keyed independently, and `reset()` really drops the entry.
+   Asked a question with no context, the model answers about *itself* — that is
+   the identity line in the system prompt doing its job, not a bug.
+
+A 0.5B model is not a reliable memory — occasionally it will deflect even with
+the name in context. Re-run before assuming the code is wrong; a rising token
+count proves the history is there regardless of what the model does with it.
+
+The locking cannot be tested from a single-threaded script. You will exercise it
+in Task 10 by opening the site in two browser windows and sending at once.
+
 ---
 
 ## Task 4 — Talk to the Engine Without a Web Server
 
-Add an `if __name__ == "__main__":` block to `chatbot_engine.py` that loads the
-engine and runs a terminal chat loop, exiting on `quit`, `stop`, or `exit`.
+**Replace** the Task 3 checkpoint one last time — this version stays in the
+file. Write an `if __name__ == "__main__":` block that loads the engine and runs
+a terminal chat loop, exiting on `quit`, `stop`, or `exit`.
 
-This is the payoff for keeping the engine web-free — and your most valuable
-debugging tool for the rest of the workshop.
+The checkpoints so far each proved one piece. This turns them into something you
+can actually hold a conversation with — the payoff for keeping the engine
+web-free, and your most valuable debugging tool for the rest of the workshop.
 
 <details>
 <summary>Solution</summary>
