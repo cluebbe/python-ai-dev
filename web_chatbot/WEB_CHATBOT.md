@@ -172,10 +172,53 @@ to it in the terminal before Flask appears at all.
 
 Create `chatbot_engine.py` with a `ChatbotEngine` class. The constructor stores
 configuration but does **not** load the model; a separate `load()` method does
-that. Add an `is_ready` property so callers can tell whether loading has
-finished.
+that. Nothing in this file may import Flask.
 
-Also define a system prompt that pins the assistant's identity.
+**Module level**
+
+- Import `logging`, `threading`, `torch`, and `AutoTokenizer` /
+  `AutoModelForCausalLM` from `transformers`.
+- Silence the library's warnings with
+  `logging.getLogger("transformers").setLevel(logging.ERROR)`. Transformers logs
+  through its own logger, so this is how you quiet it.
+- `DEFAULT_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"` — ~1 GB download,
+  Apache-2.0 and ungated, so no Hugging Face login is needed.
+- `DEFAULT_SYSTEM_PROMPT` — a system prompt that pins the assistant's identity.
+  Say it is a friendly, concise assistant running locally on Qwen2.5, that it
+  should answer "a Qwen2.5 assistant" when asked its name, and that replies
+  should stay to one or two sentences. (The reason the identity line matters is
+  in the key points below.)
+
+**`__init__`** — takes six keyword arguments, all with defaults, and stores each
+one on `self` under the same name:
+
+| Parameter | Default | Purpose |
+|---|---|---|
+| `model_name` | `DEFAULT_MODEL_NAME` | which checkpoint `load()` fetches |
+| `system_prompt` | `DEFAULT_SYSTEM_PROMPT` | prepended to every request |
+| `max_context_tokens` | `1024` | prompt budget, enforced in Task 2 |
+| `max_new_tokens` | `128` | reply length cap |
+| `temperature` | `0.7` | sampling temperature |
+| `top_p` | `0.9` | nucleus sampling threshold |
+
+It also sets up four private attributes that later tasks fill in:
+`self._model = None`, `self._tokenizer = None`, `self._histories = {}` (maps
+conversation ID → list of message dicts) and `self._lock = threading.Lock()`
+(used from Task 3 on).
+
+**`load()`** — print a line saying which model is loading and that the first run
+downloads ~1 GB, then load the tokenizer with
+`AutoTokenizer.from_pretrained(...)` and the model with
+`AutoModelForCausalLM.from_pretrained(..., torch_dtype=torch.float32)`, call
+`.eval()` on the model, and print a confirmation. Assign `self._model` last, so
+that `is_ready` below can never be `True` while the tokenizer is still missing.
+
+**Two read-only properties**, so callers never touch the private attributes:
+
+- `is_ready` — `True` once `load()` has finished. Derive it from `self._model`
+  rather than a separate flag.
+- `active_conversations` — how many conversations currently hold history. Used
+  by the health route in Task 9.
 
 <details>
 <summary>Solution</summary>
