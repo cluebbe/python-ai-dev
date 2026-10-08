@@ -36,7 +36,15 @@ Python you already have; the virtual environment decides which one is used.
    [python.org/downloads/windows](https://www.python.org/downloads/windows/)
    — or run `winget install Python.Python.3.12` in a terminal.
 2. In the installer, tick **Add python.exe to PATH**, then click **Install Now**.
-3. Open a *new* PowerShell window and check the version:
+   The other checkbox, **Use admin privileges when installing py.exe**, is
+   optional: Python itself is installed for your user either way. Untick it if
+   you have no admin rights on the machine.
+3. On the last screen, click **Disable path length limit** if it is offered
+   (needs admin rights once). `torch` and `transformers` install deeply nested
+   files, and Windows' default 260-character path limit can make
+   `pip install` fail. Without admin rights, keep the project in a short
+   folder such as `C:\src\python-ai-dev` instead.
+4. Open a *new* PowerShell window and check the version:
    ```powershell
    py -3.12 --version
    ```
