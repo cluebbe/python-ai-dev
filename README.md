@@ -37,7 +37,7 @@ export ANTHROPIC_API_KEY=your-key-here
 
 Captures live microphone audio and transcribes it using Google's free Web Speech API via the `SpeechRecognition` library. Demonstrates single-shot transcription, ambient noise calibration, continuous listening with a timeout, and proper error handling for unintelligible audio and network failures.
 
-**Extra setup (macOS):** `brew install portaudio`
+**Required setup (macOS):** `brew install portaudio flac` *before* `pip install -r requirements.txt` — PyAudio is compiled against it. On Apple Silicon, `which brew` must show `/opt/homebrew/bin/brew`. See [SPEECH_TO_TEXT.md](SPEECH_TO_TEXT.md) for troubleshooting.
 
 ---
 

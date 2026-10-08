@@ -3,8 +3,11 @@
 #
 # INSTALL
 # -------
-# macOS (if pyaudio fails):
-#   brew install portaudio
+# macOS (required BEFORE pip install, PyAudio is compiled against it):
+#   brew install portaudio flac
+#   On Apple Silicon, `which brew` must show /opt/homebrew/bin/brew.
+#   If PyAudio was installed without it, rebuild it after installing:
+#   pip install --force-reinstall --no-cache-dir PyAudio
 #
 # Linux:
 #   sudo apt-get install python3-pyaudio portaudio19-dev espeak

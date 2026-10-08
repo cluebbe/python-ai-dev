@@ -35,13 +35,29 @@ source venv/bin/activate
 venv\Scripts\activate
 ```
 
-**2. Install system dependencies (if needed)**
+**2. Install system dependencies (required on macOS and Linux)**
+
+PyAudio is compiled against the PortAudio C library, so PortAudio must be
+installed **before** you run `pip install` in the next step.
 
 | Platform | Command |
 |---|---|
-| macOS | `brew install portaudio` |
+| macOS | `brew install portaudio flac` |
 | Linux | `sudo apt-get install python3-pyaudio portaudio19-dev` |
 | Windows | `pip install pipwin && pipwin install pyaudio` |
+
+> **Apple Silicon Macs (M1 and later):** Python, the virtual environment and
+> PortAudio must all be native arm64. Check with:
+>
+> ```bash
+> which brew                                              # should be /opt/homebrew/bin/brew
+> python -c "import platform; print(platform.machine())"  # should print arm64
+> ```
+>
+> If `brew` is `/usr/local/bin/brew`, you are using an Intel (x86_64) Homebrew
+> left over from an older Mac or a migration. Its PortAudio and Python will not
+> work with a native setup. Create the venv with `/opt/homebrew/bin/python3.12`
+> and install the libraries with `/opt/homebrew/bin/brew install portaudio flac`.
 
 **3. Install Python dependencies**
 
@@ -61,6 +77,15 @@ print(sr.Microphone.list_microphone_names())
 
 If this prints a version number and a list of microphone names, your environment
 is ready.
+
+**Troubleshooting**
+
+| Error | Cause | Fix |
+|---|---|---|
+| `AttributeError: Could not find PyAudio; check installation` | PyAudio was installed while PortAudio was missing. `pip` still reports success, but the C module cannot load. | Install PortAudio (step 2), then rebuild PyAudio: `pip install --force-reinstall --no-cache-dir PyAudio` |
+| `zsh: bad CPU type in executable: python` | The venv was created with an Intel (x86_64) Python on an Apple Silicon Mac without Rosetta. | Delete `venv/` and recreate it with `/opt/homebrew/bin/python3.12 -m venv venv` |
+| `OSError: [Errno 86] Bad CPU type in executable: '.../speech_recognition/flac-mac'` | SpeechRecognition's bundled `flac-mac` converter is x86_64-only. It is used when no `flac` is on your `PATH`. | `brew install flac` (native Homebrew). SpeechRecognition prefers an installed `flac` over its bundled copy. |
+| Empty or no transcriptions on macOS | The terminal app has no microphone permission. | System Settings → Privacy & Security → Microphone → enable your terminal |
 
 ---
 
