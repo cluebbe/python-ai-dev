@@ -892,6 +892,11 @@ spoken wins outright, otherwise the one furthest back.
   can join as `Ada`, their messages are indistinguishable from the bot's in
   every transcript and every prompt — they can put words in Ada's mouth. Lower-
   casing both sides is what stops `ada`, `ADA` and `Ada` being three identities.
+- **Re-joining with the exact same name is allowed on purpose**, so a browser
+  that lost its session can take its name back. The room cannot tell that
+  browser from a stranger, though, so a second visitor who types an existing
+  member's exact name becomes that member too — fine on a trusted dev machine,
+  and a gap Exercise 5 is the place to close.
 - **Validation lives in the room, not in `app.py`.** The rules are about the
   room ("that name is taken"), not about HTTP. The web layer's job is only to
   turn the `ValueError` into a `400`.
