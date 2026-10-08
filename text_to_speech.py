@@ -55,10 +55,14 @@ def speak_loop(voice_index=None, rate=150, volume=1.0):
     Type 'quit' or 'stop' to exit.
 
     A fresh engine instance is created for each utterance rather than
-    reused across iterations. On Windows, the SAPI5 driver's event loop
-    only runs correctly once per engine instance — calling runAndWait()
-    a second time on the same instance silently produces no audio, even
-    though say() queues the text without error.
+    reused across iterations. On Windows (SAPI5) and macOS (NSSS), the
+    driver's event loop only runs correctly once per engine instance —
+    calling runAndWait() a second time on the same instance silently
+    produces no audio, even though say() queues the text without error.
+
+    pyttsx3.init() only builds a new engine when no other reference to
+    the previous one exists — otherwise it returns the cached instance.
+    Never keep an engine in a long-lived variable alongside this loop.
     """
     print("\nText-to-Speech loop. Type 'quit' or 'stop' to exit.\n")  # Explain how to end the loop
 
@@ -86,6 +90,7 @@ if __name__ == "__main__":  # Only run when this file is executed directly (not 
     # Uncomment the next two lines to see all available voices:
     _engine = pyttsx3.init()
     list_voices(_engine)
+    del _engine  # Drop the reference: pyttsx3.init() reuses an engine while it is still alive, and a reused engine stays silent after its first runAndWait()
 
     # --- Single-shot mode ---
     print("--- Single-shot mode ---")  # Label the single-shot section
