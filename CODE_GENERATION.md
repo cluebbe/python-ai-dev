@@ -47,17 +47,15 @@ Python you already have; the virtual environment decides which one is used.
    ```powershell
    py -3.12 --version
    ```
-4. Create and activate the virtual environment. Windows has no `python3.12`
-   command — use the `py` launcher instead:
-   ```powershell
-   py -3.12 -m venv venv
-   venv\Scripts\activate
-   ```
-   If PowerShell reports *"running scripts is disabled on this system"*, allow
-   local scripts once for your user and activate again:
-   ```powershell
-   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-   ```
+
+Windows has no `python3.12` command — wherever the steps below use it, run
+`py -3.12` instead. If activating the virtual environment in PowerShell reports
+*"running scripts is disabled on this system"*, allow local scripts once for
+your user and activate again:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
 
 **macOS**
 
@@ -71,17 +69,6 @@ Python you already have; the virtual environment decides which one is used.
    ```
    (The macOS installer from [python.org](https://www.python.org/downloads/macos/)
    works too.)
-3. Create and activate the virtual environment:
-   ```bash
-   python3.12 -m venv venv
-   source venv/bin/activate
-   ```
-
-**Both platforms:** once the environment is active your prompt starts with
-`(venv)`, and `python --version` prints `3.12.x`. From here on `python` and
-`pip` refer to the venv, so the remaining commands are the same on Windows and
-macOS. Run `deactivate` to leave the environment, and activate it again in
-every new terminal window.
 
 </details>
 
