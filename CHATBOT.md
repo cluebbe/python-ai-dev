@@ -88,62 +88,15 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 </details>
 
-<details>
-<summary><b>Hint:</b> Creating the project folder</summary>
-
-Create the virtual environment in the **root of this repository** — the folder
-that contains `requirements.txt`. Every tutorial shares this one environment,
-including those in the `web_chatbot/` and `group_chat/` subfolders.
-
-**With git** (recommended — `git pull` later fetches updates)
-
-Windows (PowerShell):
-
-```powershell
-mkdir C:\src
-cd C:\src
-git clone https://github.com/cluebbe/python-ai-dev.git
-cd python-ai-dev
-```
-
-macOS:
-
-```bash
-mkdir -p ~/src
-cd ~/src
-git clone https://github.com/cluebbe/python-ai-dev.git
-cd python-ai-dev
-```
-
-No git yet? Install it with `winget install Git.Git` on Windows (then open a
-new terminal), or `xcode-select --install` on macOS.
-
-**Without git**
-
-On [github.com/cluebbe/python-ai-dev](https://github.com/cluebbe/python-ai-dev),
-click **Code → Download ZIP** and extract it into `C:\src` (Windows) or `~/src`
-(macOS). Rename the extracted `python-ai-dev-main` folder to `python-ai-dev`,
-then `cd` into it as above.
-
-**Check that you are in the right folder** — this should list `requirements.txt`:
-
-```bash
-dir requirements.txt   # Windows
-ls requirements.txt    # macOS
-```
-
-A short path like `C:\src\python-ai-dev` avoids long-path errors on Windows.
-On both platforms, avoid folders synced by OneDrive or iCloud: syncing
-thousands of files in `venv/` is slow and can corrupt the environment.
-
-</details>
-
 **1. Create and activate a virtual environment with Python 3.12**
 
 > This project requires `torch`, which does not yet support Python 3.13+.
 > Use Python 3.12 to avoid compatibility issues.
 
 ```bash
+mkdir chatbot
+cd chatbot
+
 python3.12 -m venv venv     # Windows: py -3.12 -m venv venv
 
 # macOS / Linux
