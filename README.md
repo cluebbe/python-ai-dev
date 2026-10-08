@@ -2,7 +2,7 @@
 
 A collection of hands-on Python tutorials covering speech I/O, local language models, and AI-powered applications using Claude.
 
-Each tutorial comes as a pair: a runnable `.py` file you can execute and experiment with, and a `.md` workshop file with step-by-step tasks and collapsible solutions. The web chatbot spans several files, so it lives in its own [`web_chatbot/`](web_chatbot) folder.
+Each tutorial comes as a pair: a runnable `.py` file you can execute and experiment with, and a `.md` workshop file with step-by-step tasks and collapsible solutions. The web chatbot and the community chat each span several files, so they live in their own [`web_chatbot/`](web_chatbot) and [`group_chat/`](group_chat) folders.
 
 **New to Python?** Start with the beginner workshops in [cluebbe/python](https://github.com/cluebbe/python) — Python basics and object-oriented programming, no dependencies required. They used to live here, and the tutorials below assume you are comfortable with that material.
 
@@ -74,7 +74,41 @@ python chatbot_engine.py # same engine, terminal only
 
 ---
 
-### 5. AI Code Generation
+### 5. Community Chat
+**Folder:** [group_chat/](group_chat) — [GROUP_CHAT.md](group_chat/GROUP_CHAT.md) · [bot_engine.py](group_chat/bot_engine.py) · [chat_room.py](group_chat/chat_room.py) · [app.py](group_chat/app.py) · [templates/index.html](group_chat/templates/index.html)
+
+A WhatsApp-style group chat where several people and three AI bots share one
+transcript. Members join with a name, address a bot with `@Ada`, and see each
+other's messages appear live. Builds directly on the Web Chatbot and adds the
+problems that only appear once a chatbot has company.
+
+The two-file split grows a middle layer: `bot_engine.py` (model and personas),
+`chat_room.py` (transcript, membership, turn-taking, background worker) and
+`app.py` (routes and cookies), with the dependency arrow pointing one way
+throughout. All three bots share **one** loaded copy of Qwen2.5-0.5B-Instruct —
+a persona is a system prompt, not a model.
+
+Covers flattening a five-speaker transcript onto the two roles a chat template
+understands, repairing the labels a small model puts on its own messages, a
+shared message log with monotonic ids, deciding which bot answers an
+unaddressed message, three rules that stop bots talking to each other forever, a
+worker thread so sending a message never waits for a 10–15s reply, and
+`GET /messages?since=N` polling — the route a one-to-one chatbot never needs.
+Turn-taking is tested against a fake engine, so the tricky parts run in
+milliseconds with no model loaded.
+
+```bash
+cd group_chat
+python app.py            # web server at http://127.0.0.1:5000
+python chat_room.py      # same room, terminal only
+python bot_engine.py     # personas answering a fixed transcript
+```
+
+**Extra setup:** Python 3.12 required · shares the Qwen2.5-0.5B-Instruct download with the Web Chatbot · expect 10–15s per bot reply on CPU · open the page twice (one private window) to chat as two members
+
+---
+
+### 6. AI Code Generation
 **Files:** [code_generation.py](code_generation.py) · [CODE_GENERATION.md](CODE_GENERATION.md)
 
 Uses the Anthropic Python SDK to call Claude (claude-opus-4-8) for AI-powered code generation. Demonstrates generating functions and classes from descriptions, streaming long outputs, producing code alongside unit tests, refactoring messy code, explaining complex snippets, and building a multi-turn interactive coding assistant. Includes prompt caching to reduce API costs.
@@ -92,8 +126,8 @@ All Python packages are pinned in [requirements.txt](requirements.txt). Key pack
 | `SpeechRecognition` | Speech to Text, Chatbot |
 | `PyAudio` | Speech to Text, Chatbot |
 | `pyttsx3` | Text to Speech, Chatbot |
-| `torch==2.2.2` | Chatbot, Web Chatbot |
-| `transformers==4.38.0` | Chatbot, Web Chatbot |
-| `numpy==1.26.4` | Chatbot, Web Chatbot (pinned below 2.0 for torch compatibility) |
-| `Flask==3.1.3` | Web Chatbot |
+| `torch==2.2.2` | Chatbot, Web Chatbot, Community Chat |
+| `transformers==4.38.0` | Chatbot, Web Chatbot, Community Chat |
+| `numpy==1.26.4` | Chatbot, Web Chatbot, Community Chat (pinned below 2.0 for torch compatibility) |
+| `Flask==3.1.3` | Web Chatbot, Community Chat |
 | `anthropic` | AI Code Generation |

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Community Chat</title>
+  <style>
+    /* Everything is inline so the page needs no CDN and no static/ folder. */
+    :root {
+      --bg: #f4f5f7;
+      --panel: #ffffff;
+      --border: #d8dbe0;
+      --text: #1c1e21;
+      --muted: #6b7280;
+      --other: #eceef1;
+      --mine: #2563eb;
+      --bot-tag: #7c3aed;
+      --error: #b91c1c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16181d;
+        --panel: #1e2027;
+        --border: #33363d;
+        --text: #e8eaed;
+        --muted: #9aa0aa;
+        --other: #2a2d35;
+        --mine: #3b82f6;
+        --bot-tag: #a78bfa;
+        --error: #f87171;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 2rem 1rem;
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+    }
+
+    .app { width: 100%; max-width: 680px; }
+
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: .5rem; }
+    h1 { font-size: 1.25rem; margin: 0; }
+    #model { font-size: .75rem; color: var(--muted); }
+    #status { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+
+    /* The member list doubles as documentation: it is the only place that says
+       which names the bots answer to. */
+    #members { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .6rem; }
+    .chip {
+      font-size: .75rem;
+      padding: .15rem .55rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel);
+      cursor: pointer;
+    }
+    .chip .tag { color: var(--bot-tag); font-weight: 700; font-size: .65rem; margin-left: .3rem; }
+
+    #transcript {
+      height: 58vh;
+      overflow-y: auto;
+      padding: 1rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+
+    .row { display: flex; flex-direction: column; max-width: 82%; }
+    .row.mine { align-self: flex-end; align-items: flex-end; }
+    .row.theirs { align-self: flex-start; }
+
+    /* In a two-party chat you can tell the speakers apart by which side the
+       bubble is on. With five members you cannot, so every incoming bubble is
+       labelled and tinted by speaker. */
+    .who { font-size: .7rem; color: var(--muted); margin: 0 .3rem .1rem; }
+    .who .tag { color: var(--bot-tag); font-weight: 700; }
+
+    .bubble {
+      padding: .5rem .8rem;
+      border-radius: 14px;
+      background: var(--other);
+      border-left: 3px solid var(--speaker, transparent);
+      white-space: pre-wrap;   /* Preserve line breaks in the model's output */
+      word-wrap: break-word;   /* Break long unbroken strings instead of overflowing */
+    }
+    .row.mine .bubble { background: var(--mine); color: #fff; border-left: 0; border-bottom-right-radius: 4px; }
+    .row.theirs .bubble { border-bottom-left-radius: 4px; }
+
+    .typing { align-self: flex-start; font-size: .8rem; color: var(--muted); font-style: italic; }
+    .system { align-self: center; font-size: .8rem; color: var(--muted); }
+    .error  { align-self: center; font-size: .875rem; color: var(--error); text-align: center; }
+
+    form { display: flex; gap: .5rem; margin-top: .75rem; }
+
+    input[type="text"] {
+      flex: 1;
+      padding: .7rem .9rem;
+      font: inherit;
+      color: var(--text);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    input[type="text"]:focus { outline: 2px solid var(--mine); outline-offset: -1px; }
+
+    button {
+      padding: .7rem 1.1rem;
+      font: inherit;
+      font-weight: 600;
+      color: #fff;
+      background: var(--mine);
+      border: 0;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    button.secondary { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 400; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    .hidden { display: none; }
+    #join p { color: var(--muted); font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1>Community Chat</h1>
+        <!-- Filled in by Flask from engine.model_name, so swapping the model
+             updates the page automatically instead of leaving a stale name. -->
+        <span id="model">every bot runs on {{ model_name }}</span>
+      </div>
+      <span id="status"></span>
+    </header>
+
+    <!-- The join screen and the chat are the same page; Flask decides which one
+         is visible on first render, and JavaScript switches between them after. -->
+    <div id="join" class="{{ 'hidden' if member else '' }}">
+      <div id="transcript">
+        <p class="system">Pick a name to join the room.</p>
+      </div>
+      <form id="join-form">
+        <input type="text" id="join-name" placeholder="Your name…" autocomplete="off" maxlength="24">
+        <button type="submit">Join</button>
+      </form>
+      <p>The bots in this room share one small language model. They can be slow, and they will contradict each other.</p>
+    </div>
+
+    <div id="chat" class="{{ '' if member else 'hidden' }}">
+      <div id="members"></div>
+      <div id="transcript-chat" aria-live="polite"></div>
+      <form id="chat-form">
+        <input type="text" id="text" placeholder="Message the room… (@Ada, @Newton, @Pixel)" autocomplete="off" autofocus maxlength="500">
+        <button type="submit" id="send">Send</button>
+        <button type="button" id="clear" class="secondary" title="Clears the transcript for everyone">Clear</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Rendered by Jinja: "Sam" once this browser has joined, otherwise null.
+    // |tojson quotes and escapes it — writing {{ member }} raw would break the
+    // script on any name containing a quote.
+    let me = {{ member|tojson }};
+
+    const joinPane = document.getElementById("join");
+    const chatPane = document.getElementById("chat");
+    const joinForm = document.getElementById("join-form");
+    const joinName = document.getElementById("join-name");
+    const membersEl = document.getElementById("members");
+    const transcript = document.getElementById("transcript-chat");
+    const chatForm = document.getElementById("chat-form");
+    const textInput = document.getElementById("text");
+    const sendBtn = document.getElementById("send");
+    const clearBtn = document.getElementById("clear");
+    const status = document.getElementById("status");
+
+    let lastId = 0;      // The highest message id this page has rendered — the whole polling protocol is this one number
+    let epoch = null;    // Bumped by the server when someone clears the room
+    let typingEl = null; // The single "… is typing" line at the bottom of the transcript
+
+    // Give every speaker a stable colour derived from their name, so the same
+    // person is the same colour in every browser without the server sending one.
+    function colorFor(name) {
+      let hash = 0;
+      for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) % 360;
+      return `hsl(${hash}, 70%, 55%)`;
+    }
+
+    // Append one message. Text is assigned with .textContent, never .innerHTML —
+    // model output and other members' messages are both untrusted text, and
+    // .innerHTML would execute any HTML inside them.
+    function addMessage(msg) {
+      const row = document.createElement("div");
+      row.className = "row " + (msg.speaker === me ? "mine" : "theirs");
+
+      if (msg.speaker !== me) {
+        const who = document.createElement("div");
+        who.className = "who";
+        who.textContent = msg.speaker;
+        if (msg.is_bot) {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = " BOT";
+          who.appendChild(tag);
+        }
+        row.appendChild(who);
+      }
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.style.setProperty("--speaker", colorFor(msg.speaker));
+      bubble.textContent = msg.text;
+      row.appendChild(bubble);
+
+      transcript.appendChild(row);
+      return row;
+    }
+
+    function addNote(text, kind) {
+      const el = document.createElement("div");
+      el.className = kind;
+      el.textContent = text;
+      transcript.appendChild(el);
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+
+    function renderMembers(members) {
+      membersEl.replaceChildren();
+      for (const m of members) {
+        const chip = document.createElement("button");
+        chip.className = "chip";
+        chip.type = "button";
+        chip.textContent = m.name;
+        chip.title = m.description || (m.name === me ? "you" : "");
+        if (m.is_bot) {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = "BOT";
+          chip.appendChild(tag);
+        }
+        // Clicking a chip drops a mention into the box — the fastest way to
+        // discover that addressing a bot by name is what summons it.
+        chip.addEventListener("click", () => {
+          textInput.value = (textInput.value.trim() + " @" + m.name + " ").trimStart();
+          textInput.focus();
+        });
+        membersEl.appendChild(chip);
+      }
+    }
+
+    function renderTyping(names) {
+      if (typingEl) { typingEl.remove(); typingEl = null; }
+      if (!names.length) { status.textContent = ""; return; }
+      typingEl = document.createElement("div");
+      typingEl.className = "typing";
+      typingEl.textContent = names.join(" and ") + (names.length > 1 ? " are writing…" : " is writing…");
+      transcript.appendChild(typingEl);
+      status.textContent = "thinking…";
+    }
+
+    async function postJSON(url, payload) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));   // Guard against an HTML error page instead of JSON
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      return data;
+    }
+
+    // One poll: ask for everything newer than lastId and draw it.
+    // This runs on a timer rather than only after sending, because most
+    // messages in a group chat are written by somebody else.
+    async function poll() {
+      if (!me) return;
+      try {
+        const res = await fetch(`/messages?since=${lastId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (epoch !== null && data.epoch !== epoch) {   // Somebody pressed Clear
+          transcript.replaceChildren();
+          typingEl = null;
+          addNote("The room was cleared.", "system");
+        }
+        epoch = data.epoch;
+
+        const atBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 60;
+        if (typingEl) { typingEl.remove(); typingEl = null; }   // Remove it first, so new messages land above it
+
+        for (const msg of data.messages) {
+          addMessage(msg);
+          lastId = Math.max(lastId, msg.id);   // Only ever moves forward, so a message is never drawn twice
+        }
+        renderMembers(data.members);
+        renderTyping(data.typing);
+
+        // Only auto-scroll if the reader was already at the bottom, so reading
+        // back through the log is not yanked away by an arriving message.
+        if (atBottom || data.messages.some(m => m.speaker === me)) {
+          transcript.scrollTop = transcript.scrollHeight;
+        }
+      } catch (err) {
+        status.textContent = "offline";   // The server went away; the next tick will pick it back up
+      }
+    }
+
+    joinForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = joinName.value.trim();
+      if (!name) return;
+      try {
+        const data = await postJSON("/join", { name });
+        me = data.name;
+        joinPane.classList.add("hidden");
+        chatPane.classList.remove("hidden");
+        textInput.focus();
+        poll();
+      } catch (err) {
+        joinPane.querySelector("#transcript").replaceChildren();
+        const el = document.createElement("p");
+        el.className = "error";
+        el.textContent = err.message;
+        joinPane.querySelector("#transcript").appendChild(el);
+      }
+    });
+
+    chatForm.addEventListener("submit", async (event) => {
+      event.preventDefault();                 // Stop the browser from doing a full page reload
+      const text = textInput.value.trim();
+      if (!text) return;                      // Ignore empty submissions
+
+      textInput.value = "";
+      sendBtn.disabled = true;
+      try {
+        // Note what is *not* here: no reply is drawn from this response. The
+        // POST only stores the message; both it and every bot answer arrive
+        // through poll(), so the code path is identical to another member's
+        // message showing up.
+        await postJSON("/messages", { text });
+        await poll();                         // Poll straight away so your own message appears instantly
+      } catch (err) {
+        if (err.message.includes("Join the room")) {   // Session expired or the server restarted
+          me = null;
+          chatPane.classList.add("hidden");
+          joinPane.classList.remove("hidden");
+        } else {
+          addNote(err.message, "error");
+        }
+      } finally {
+        sendBtn.disabled = false;
+        textInput.focus();
+      }
+    });
+
+    clearBtn.addEventListener("click", async () => {
+      try {
+        await postJSON("/reset", {});
+        await poll();
+      } catch (err) {
+        addNote(err.message, "error");
+      }
+    });
+
+    // 1.5s is a compromise: fast enough that a room feels live, slow enough
+    // that an idle page is not hammering a server that is busy generating.
+    // Exercise 3 replaces this with server-sent events.
+    setInterval(poll, 1500);
+
+    // Browsers throttle timers in hidden tabs — Chrome down to roughly once a
+    // minute — so a backgrounded chat quietly stops updating. Polling again the
+    // moment the tab is shown means the reader never sees a stale room.
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) poll();
+    });
+
+    poll();
+  </script>
+</body>
+</html>
