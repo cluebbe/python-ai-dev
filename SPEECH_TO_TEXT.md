@@ -23,10 +23,65 @@ library for real-time audio I/O.
 
 ### Setting Up the Development Environment
 
+<details>
+<summary><b>Hint:</b> Installing Python 3.12 on Windows and macOS</summary>
+
+All tutorials in this repository use **Python 3.12** — `requirements.txt` pins
+`torch`, which has no wheels for Python 3.13+. Install 3.12 alongside any other
+Python you already have; the virtual environment decides which one is used.
+
+**Windows**
+
+1. Download the latest **Python 3.12.x Windows installer (64-bit)** from
+   [python.org/downloads/windows](https://www.python.org/downloads/windows/)
+   — or run `winget install Python.Python.3.12` in a terminal.
+2. In the installer, tick **Add python.exe to PATH**, then click **Install Now**.
+3. Open a *new* PowerShell window and check the version:
+   ```powershell
+   py -3.12 --version
+   ```
+4. Create and activate the virtual environment. Windows has no `python3.12`
+   command — use the `py` launcher instead:
+   ```powershell
+   py -3.12 -m venv venv
+   venv\Scripts\activate
+   ```
+   If PowerShell reports *"running scripts is disabled on this system"*, allow
+   local scripts once for your user and activate again:
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+   ```
+
+**macOS**
+
+1. Install [Homebrew](https://brew.sh) if you don't have it yet. On Apple
+   Silicon Macs (M1 and later), `which brew` should print
+   `/opt/homebrew/bin/brew`.
+2. Install Python 3.12 and check the version:
+   ```bash
+   brew install python@3.12
+   python3.12 --version
+   ```
+   (The macOS installer from [python.org](https://www.python.org/downloads/macos/)
+   works too.)
+3. Create and activate the virtual environment:
+   ```bash
+   python3.12 -m venv venv
+   source venv/bin/activate
+   ```
+
+**Both platforms:** once the environment is active your prompt starts with
+`(venv)`, and `python --version` prints `3.12.x`. From here on `python` and
+`pip` refer to the venv, so the remaining commands are the same on Windows and
+macOS. Run `deactivate` to leave the environment, and activate it again in
+every new terminal window.
+
+</details>
+
 **1. Create and activate a virtual environment**
 
 ```bash
-python -m venv venv
+python3.12 -m venv venv     # Windows: py -3.12 -m venv venv
 
 # macOS / Linux
 source venv/bin/activate
@@ -44,7 +99,7 @@ installed **before** you run `pip install` in the next step.
 |---|---|
 | macOS | `brew install portaudio flac` |
 | Linux | `sudo apt-get install python3-pyaudio portaudio19-dev` |
-| Windows | `pip install pipwin && pipwin install pyaudio` |
+| Windows | None — PyAudio ships prebuilt wheels for Python 3.12 |
 
 > **Apple Silicon Macs (M1 and later):** Python, the virtual environment and
 > PortAudio must all be native arm64. Check with:
