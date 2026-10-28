@@ -22,6 +22,8 @@ venv\Scripts\activate         # Windows
 pip install -r requirements.txt
 ```
 
+On Windows, if `venv\Scripts\activate` fails with *"running scripts is disabled on this system"* (German: *"die Ausführung von Skripts auf diesem System deaktiviert"*) — also in the VS Code terminal — run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once and activate again. Each tutorial's setup step has details and alternatives.
+
 For the code generation tutorial you also need an Anthropic API key:
 
 ```bash

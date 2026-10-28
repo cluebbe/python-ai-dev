@@ -46,13 +46,7 @@ Python you already have; the virtual environment decides which one is used.
    ```
 
 Windows has no `python3.13` command — wherever the steps below use it, run
-`py -3.13` instead. If activating the virtual environment in PowerShell reports
-*"running scripts is disabled on this system"*, allow local scripts once for
-your user and activate again:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
+`py -3.13` instead.
 
 **macOS**
 
@@ -83,6 +77,37 @@ source venv/bin/activate
 # Windows
 venv\Scripts\activate
 ```
+
+<details>
+<summary><b>Hint:</b> Windows — "running scripts is disabled on this system"</summary>
+
+PowerShell blocks all scripts by default, including `venv\Scripts\Activate.ps1`,
+so `venv\Scripts\activate` fails with:
+
+- English Windows: *"…cannot be loaded because running scripts is disabled on
+  this system"*
+- German Windows: *"…kann nicht geladen werden, da die Ausführung von Skripts
+  auf diesem System deaktiviert ist"*
+
+The VS Code terminal is PowerShell too, so it shows the same error. Allow
+local scripts once for your user — no admin rights needed — and activate again:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+venv\Scripts\activate
+```
+
+Answer **Y** (German: **J**) if asked to confirm. The setting is permanent, so
+open a new VS Code terminal if the old one still fails.
+
+If your organisation does not allow this, either allow scripts for the current
+window only with `Set-ExecutionPolicy -Scope Process Bypass` (repeat it in
+every new window), or use the Command Prompt instead of PowerShell and run
+`venv\Scripts\activate.bat`. In VS Code: click the **˅** next to **+** in the
+terminal panel → **Select Default Profile** → **Command Prompt**, then open a
+new terminal.
+
+</details>
 
 **2. Install system dependencies (if needed)**
 
