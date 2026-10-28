@@ -24,17 +24,17 @@ library for real-time audio I/O.
 ### Setting Up the Development Environment
 
 <details>
-<summary><b>Hint:</b> Installing Python 3.12 on Windows and macOS</summary>
+<summary><b>Hint:</b> Installing Python 3.13 on Windows and macOS</summary>
 
-All tutorials in this repository use **Python 3.12** — `requirements.txt` pins
-`torch`, which has no wheels for Python 3.13+. Install 3.12 alongside any other
+All tutorials in this repository use **Python 3.13** — PyAudio has no Windows
+wheels for 3.14 yet, so newer is not safer here. Install 3.13 alongside any other
 Python you already have; the virtual environment decides which one is used.
 
 **Windows**
 
-1. Download the latest **Python 3.12.x Windows installer (64-bit)** from
+1. Download the latest **Python 3.13.x Windows installer (64-bit)** from
    [python.org/downloads/windows](https://www.python.org/downloads/windows/)
-   — or run `winget install Python.Python.3.12` in a terminal.
+   — or run `winget install Python.Python.3.13` in a terminal.
 2. In the installer, tick **Add python.exe to PATH**, then click **Install Now**.
    The other checkbox, **Use admin privileges when installing py.exe**, is
    optional: Python itself is installed for your user either way. Untick it if
@@ -46,11 +46,11 @@ Python you already have; the virtual environment decides which one is used.
    folder such as `C:\src\python-ai-dev` instead.
 4. Open a *new* PowerShell window and check the version:
    ```powershell
-   py -3.12 --version
+   py -3.13 --version
    ```
 
-Windows has no `python3.12` command — wherever the steps below use it, run
-`py -3.12` instead. If activating the virtual environment in PowerShell reports
+Windows has no `python3.13` command — wherever the steps below use it, run
+`py -3.13` instead. If activating the virtual environment in PowerShell reports
 *"running scripts is disabled on this system"*, allow local scripts once for
 your user and activate again:
 
@@ -63,10 +63,10 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 1. Install [Homebrew](https://brew.sh) if you don't have it yet. On Apple
    Silicon Macs (M1 and later), `which brew` should print
    `/opt/homebrew/bin/brew`.
-2. Install Python 3.12 and check the version:
+2. Install Python 3.13 and check the version:
    ```bash
-   brew install python@3.12
-   python3.12 --version
+   brew install python@3.13
+   python3.13 --version
    ```
    (The macOS installer from [python.org](https://www.python.org/downloads/macos/)
    works too.)
@@ -79,7 +79,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 mkdir speech_to_text
 cd speech_to_text
 
-python3.12 -m venv venv     # Windows: py -3.12 -m venv venv
+python3.13 -m venv venv     # Windows: py -3.13 -m venv venv
 
 # macOS / Linux
 source venv/bin/activate
@@ -97,7 +97,7 @@ installed **before** you run `pip install` in the next step.
 |---|---|
 | macOS | `brew install portaudio flac` |
 | Linux | `sudo apt-get install python3-pyaudio portaudio19-dev` |
-| Windows | None — PyAudio ships prebuilt wheels for Python 3.12 |
+| Windows | None — PyAudio ships prebuilt wheels for Python 3.13 |
 
 > **Apple Silicon Macs (M1 and later):** Python, the virtual environment and
 > PortAudio must all be native arm64. Check with:
@@ -109,7 +109,7 @@ installed **before** you run `pip install` in the next step.
 >
 > If `brew` is `/usr/local/bin/brew`, you are using an Intel (x86_64) Homebrew
 > left over from an older Mac or a migration. Its PortAudio and Python will not
-> work with a native setup. Create the venv with `/opt/homebrew/bin/python3.12`
+> work with a native setup. Create the venv with `/opt/homebrew/bin/python3.13`
 > and install the libraries with `/opt/homebrew/bin/brew install portaudio flac`.
 
 **3. Install Python dependencies**
@@ -136,7 +136,7 @@ is ready.
 | Error | Cause | Fix |
 |---|---|---|
 | `AttributeError: Could not find PyAudio; check installation` | PyAudio was installed while PortAudio was missing. `pip` still reports success, but the C module cannot load. | Install PortAudio (step 2), then rebuild PyAudio: `pip install --force-reinstall --no-cache-dir PyAudio` |
-| `zsh: bad CPU type in executable: python` | The venv was created with an Intel (x86_64) Python on an Apple Silicon Mac without Rosetta. | Delete `venv/` and recreate it with `/opt/homebrew/bin/python3.12 -m venv venv` |
+| `zsh: bad CPU type in executable: python` | The venv was created with an Intel (x86_64) Python on an Apple Silicon Mac without Rosetta. | Delete `venv/` and recreate it with `/opt/homebrew/bin/python3.13 -m venv venv` |
 | `OSError: [Errno 86] Bad CPU type in executable: '.../speech_recognition/flac-mac'` | SpeechRecognition's bundled `flac-mac` converter is x86_64-only. It is used when no `flac` is on your `PATH`. | `brew install flac` (native Homebrew). SpeechRecognition prefers an installed `flac` over its bundled copy. |
 | Empty or no transcriptions on macOS | The terminal app has no microphone permission. | System Settings → Privacy & Security → Microphone → enable your terminal |
 

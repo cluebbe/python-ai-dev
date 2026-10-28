@@ -57,7 +57,7 @@ def build_chatbot():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)             # Load the tokenizer that matches the model's vocabulary
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        torch_dtype=torch.float32,  # float32 measured ~11% faster than bfloat16 on CPUs without native bf16 support, and 0.5B still only needs ~2 GB
+        dtype=torch.float32,        # float32 measured ~11% faster than bfloat16 on CPUs without native bf16 support, and 0.5B still only needs ~2 GB
     )
     model.eval()                                                      # Switch to inference mode — disables dropout for deterministic output
     print("Model ready.\n")                                           # Confirm the model has loaded successfully
@@ -162,6 +162,7 @@ def build_prompt(history, tokenizer):
             messages,
             add_generation_prompt=True,  # Append the opening of the assistant turn so the model replies instead of inventing your next line
             return_tensors="pt",         # Return a PyTorch tensor rather than a plain list
+            return_dict=False,           # Return just the token IDs — transformers 5 otherwise returns a dict of ids plus attention mask
         )
 
         if input_ids.shape[-1] <= MAX_CONTEXT_TOKENS:  # The prompt fits within the budget

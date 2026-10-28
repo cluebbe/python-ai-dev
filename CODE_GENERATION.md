@@ -31,17 +31,17 @@ Plain-English description
 ### Setting Up the Development Environment
 
 <details>
-<summary><b>Hint:</b> Installing Python 3.12 on Windows and macOS</summary>
+<summary><b>Hint:</b> Installing Python 3.13 on Windows and macOS</summary>
 
-All tutorials in this repository use **Python 3.12** — `requirements.txt` pins
-`torch`, which has no wheels for Python 3.13+. Install 3.12 alongside any other
+All tutorials in this repository use **Python 3.13** — PyAudio has no Windows
+wheels for 3.14 yet, so newer is not safer here. Install 3.13 alongside any other
 Python you already have; the virtual environment decides which one is used.
 
 **Windows**
 
-1. Download the latest **Python 3.12.x Windows installer (64-bit)** from
+1. Download the latest **Python 3.13.x Windows installer (64-bit)** from
    [python.org/downloads/windows](https://www.python.org/downloads/windows/)
-   — or run `winget install Python.Python.3.12` in a terminal.
+   — or run `winget install Python.Python.3.13` in a terminal.
 2. In the installer, tick **Add python.exe to PATH**, then click **Install Now**.
    The other checkbox, **Use admin privileges when installing py.exe**, is
    optional: Python itself is installed for your user either way. Untick it if
@@ -53,11 +53,11 @@ Python you already have; the virtual environment decides which one is used.
    folder such as `C:\src\python-ai-dev` instead.
 4. Open a *new* PowerShell window and check the version:
    ```powershell
-   py -3.12 --version
+   py -3.13 --version
    ```
 
-Windows has no `python3.12` command — wherever the steps below use it, run
-`py -3.12` instead. If activating the virtual environment in PowerShell reports
+Windows has no `python3.13` command — wherever the steps below use it, run
+`py -3.13` instead. If activating the virtual environment in PowerShell reports
 *"running scripts is disabled on this system"*, allow local scripts once for
 your user and activate again:
 
@@ -70,10 +70,10 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 1. Install [Homebrew](https://brew.sh) if you don't have it yet. On Apple
    Silicon Macs (M1 and later), `which brew` should print
    `/opt/homebrew/bin/brew`.
-2. Install Python 3.12 and check the version:
+2. Install Python 3.13 and check the version:
    ```bash
-   brew install python@3.12
-   python3.12 --version
+   brew install python@3.13
+   python3.13 --version
    ```
    (The macOS installer from [python.org](https://www.python.org/downloads/macos/)
    works too.)
@@ -86,7 +86,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 mkdir code_generation
 cd code_generation
 
-python3.12 -m venv venv   # Windows: py -3.12 -m venv venv
+python3.13 -m venv venv   # Windows: py -3.13 -m venv venv
 source venv/bin/activate   # macOS / Linux
 venv\Scripts\activate      # Windows
 ```

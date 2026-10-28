@@ -10,11 +10,11 @@ Each tutorial comes as a pair: a runnable `.py` file you can execute and experim
 
 ## Getting Started
 
-**Requirements:** Python 3.12 (required for the AI tutorials — `torch` does not support 3.13+)
+**Requirements:** Python 3.13 (3.14 lacks PyAudio wheels on Windows) · AI tutorials need an Apple Silicon Mac on macOS — `torch` no longer ships Intel Mac builds
 
 ```bash
 # Create and activate a virtual environment
-python3.12 -m venv venv
+python3.13 -m venv venv
 source venv/bin/activate      # macOS / Linux
 venv\Scripts\activate         # Windows
 
@@ -53,7 +53,7 @@ Converts written text into spoken audio using `pyttsx3`, which runs fully offlin
 
 Combines speech-to-text and text-to-speech with the local **Qwen2.5-0.5B-Instruct** language model to build a fully conversational chatbot. Supports both voice and keyboard input. Responses are spoken aloud and printed to the terminal. Conversation history is kept as a list of role-tagged messages and rendered with `apply_chat_template`, trimmed by whole turns to fit the context budget, with a system prompt that pins the assistant's identity and keeps replies short enough to listen to.
 
-**Extra setup:** Python 3.12 required · first run downloads Qwen2.5-0.5B-Instruct (~1 GB, ungated — no HF login needed) · expect 10–15s per reply on CPU
+**Extra setup:** Python 3.13 required · first run downloads Qwen2.5-0.5B-Instruct (~1 GB, ungated — no HF login needed) · expect 10–15s per reply on CPU
 
 ---
 
@@ -70,7 +70,7 @@ python app.py            # web server at http://127.0.0.1:5000
 python chatbot_engine.py # same engine, terminal only
 ```
 
-**Extra setup:** Python 3.12 required · first run downloads Qwen2.5-0.5B-Instruct (~1 GB, ungated — no HF login needed) · expect 10–15s per reply on CPU · on macOS, AirPlay Receiver may occupy port 5000 — use `PORT=5001 python app.py`
+**Extra setup:** Python 3.13 required · first run downloads Qwen2.5-0.5B-Instruct (~1 GB, ungated — no HF login needed) · expect 10–15s per reply on CPU · on macOS, AirPlay Receiver may occupy port 5000 — use `PORT=5001 python app.py`
 
 ---
 
@@ -104,7 +104,7 @@ python chat_room.py      # same room, terminal only
 python bot_engine.py     # personas answering a fixed transcript
 ```
 
-**Extra setup:** Python 3.12 required · shares the Qwen2.5-0.5B-Instruct download with the Web Chatbot · expect 10–15s per bot reply on CPU · open the page twice (one private window) to chat as two members
+**Extra setup:** Python 3.13 required · shares the Qwen2.5-0.5B-Instruct download with the Web Chatbot · expect 10–15s per bot reply on CPU · open the page twice (one private window) to chat as two members
 
 ---
 
@@ -126,8 +126,8 @@ All Python packages are pinned in [requirements.txt](requirements.txt). Key pack
 | `SpeechRecognition` | Speech to Text, Chatbot |
 | `PyAudio` | Speech to Text, Chatbot |
 | `pyttsx3` | Text to Speech, Chatbot |
-| `torch==2.2.2` | Chatbot, Web Chatbot, Community Chat |
-| `transformers==4.38.0` | Chatbot, Web Chatbot, Community Chat |
-| `numpy==1.26.4` | Chatbot, Web Chatbot, Community Chat (pinned below 2.0 for torch compatibility) |
+| `torch==2.14.1` | Chatbot, Web Chatbot, Community Chat |
+| `transformers==5.21.0` | Chatbot, Web Chatbot, Community Chat |
+| `numpy==2.5.4` | Chatbot, Web Chatbot, Community Chat |
 | `Flask==3.1.3` | Web Chatbot, Community Chat |
 | `anthropic` | AI Code Generation |

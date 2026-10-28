@@ -121,17 +121,17 @@ to the file that created the app.
 ### Setting Up the Development Environment
 
 <details>
-<summary><b>Hint:</b> Installing Python 3.12 on Windows and macOS</summary>
+<summary><b>Hint:</b> Installing Python 3.13 on Windows and macOS</summary>
 
-All tutorials in this repository use **Python 3.12** — `requirements.txt` pins
-`torch`, which has no wheels for Python 3.13+. Install 3.12 alongside any other
+All tutorials in this repository use **Python 3.13** — PyAudio has no Windows
+wheels for 3.14 yet, so newer is not safer here. Install 3.13 alongside any other
 Python you already have; the virtual environment decides which one is used.
 
 **Windows**
 
-1. Download the latest **Python 3.12.x Windows installer (64-bit)** from
+1. Download the latest **Python 3.13.x Windows installer (64-bit)** from
    [python.org/downloads/windows](https://www.python.org/downloads/windows/)
-   — or run `winget install Python.Python.3.12` in a terminal.
+   — or run `winget install Python.Python.3.13` in a terminal.
 2. In the installer, tick **Add python.exe to PATH**, then click **Install Now**.
    The other checkbox, **Use admin privileges when installing py.exe**, is
    optional: Python itself is installed for your user either way. Untick it if
@@ -143,11 +143,11 @@ Python you already have; the virtual environment decides which one is used.
    folder such as `C:\src\python-ai-dev` instead.
 4. Open a *new* PowerShell window and check the version:
    ```powershell
-   py -3.12 --version
+   py -3.13 --version
    ```
 
-Windows has no `python3.12` command — wherever the steps below use it, run
-`py -3.12` instead. If activating the virtual environment in PowerShell reports
+Windows has no `python3.13` command — wherever the steps below use it, run
+`py -3.13` instead. If activating the virtual environment in PowerShell reports
 *"running scripts is disabled on this system"*, allow local scripts once for
 your user and activate again:
 
@@ -160,26 +160,25 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 1. Install [Homebrew](https://brew.sh) if you don't have it yet. On Apple
    Silicon Macs (M1 and later), `which brew` should print
    `/opt/homebrew/bin/brew`.
-2. Install Python 3.12 and check the version:
+2. Install Python 3.13 and check the version:
    ```bash
-   brew install python@3.12
-   python3.12 --version
+   brew install python@3.13
+   python3.13 --version
    ```
    (The macOS installer from [python.org](https://www.python.org/downloads/macos/)
    works too.)
 
 </details>
 
-**1. Create and activate a virtual environment with Python 3.12**
+**1. Create and activate a virtual environment with Python 3.13**
 
-> This project requires `torch`, which does not yet support Python 3.13+.
-> Use Python 3.12 to avoid compatibility issues.
+> Use Python 3.13 — PyAudio has no Windows wheels for 3.14 yet.
 
 ```bash
 mkdir web_chatbot
 cd web_chatbot
 
-python3.12 -m venv venv     # Windows: py -3.12 -m venv venv
+python3.13 -m venv venv     # Windows: py -3.13 -m venv venv
 
 # macOS / Linux
 source venv/bin/activate
@@ -208,8 +207,8 @@ pip install -r requirements.txt
 ```python
 import flask, torch, transformers
 print(flask.__version__)          # 3.x
-print(torch.__version__)          # should print 2.2.2
-print(transformers.__version__)   # should print 4.38.0
+print(torch.__version__)          # should print 2.14.1
+print(transformers.__version__)   # should print 5.21.0
 ```
 
 ---
@@ -323,7 +322,7 @@ class ChatbotEngine:
         self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self._model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
-            torch_dtype=torch.float32,
+            dtype=torch.float32,
         )
         self._model.eval()
         print("Model ready.")
@@ -350,7 +349,7 @@ class ChatbotEngine:
   a gigabyte.
 - **Load once, at startup.** Loading inside a request handler would re-read the
   model on every message — tens of seconds per reply, and several copies in RAM.
-- **`torch_dtype=torch.float32` is a deliberate choice, not a default.** The
+- **`dtype=torch.float32` is a deliberate choice, not a default.** The
   obvious move on a memory-constrained machine is `bfloat16`, which halves the
   weights to ~1 GB. But CPUs without native bf16 support emulate it, and
   measured on a 1.1 GHz Intel i5 float32 ran **~11% faster** (3.34 vs 3.01
@@ -431,6 +430,7 @@ Write two private methods:
                 messages,
                 add_generation_prompt=True,
                 return_tensors="pt",
+                return_dict=False,
             )
 
             if input_ids.shape[-1] <= self.max_context_tokens:
